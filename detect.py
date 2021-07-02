@@ -1,0 +1,686 @@
+#!/usr/bin/env python
+
+# NOTE: Line numbers of this example are referenced in the user guide.
+# Don't forget to update the user guide after every modification of this example.
+
+import csv
+import cv2
+import math
+import os
+import queue # 병렬 연산하는데 필요하다고 함
+import shlex
+import subprocess
+import tempfile
+import threading
+import traceback
+import time
+# import apriltag
+import socket
+# from pupil_apriltags import Detector
+import pupil_apriltags
+import numpy as np
+
+import olympe
+from olympe.messages.ardrone3.Piloting import TakeOff, Landing, PCMD
+from pynput.keyboard import Listener, Key, KeyCode
+from collections import defaultdict
+from enum import Enum
+from olympe.messages.ardrone3.Piloting import moveBy
+from olympe.messages.ardrone3.PilotingState import FlyingStateChanged
+from olympe.messages.ardrone3.PilotingSettings import MaxTilt
+from olympe.messages.ardrone3.GPSSettingsState import GPSFixStateChanged
+from olympe.messages.gimbal import set_target
+from olympe.messages.move import extended_move_by
+
+olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}})
+
+# 드론 와이파이 인지 아닌지 자동 판별
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+try: # 시뮬레이션
+    s.connect(('8.8.8.8', 0))
+    # ip = s.getsockname()[0]
+    DRONE_IP= "10.202.0.1"
+except: # 드론 연결
+    DRONE_IP = '192.168.42.1' # 드론
+
+
+class Ctrl(Enum):
+    (
+        QUIT,
+        TAKEOFF,
+        LANDING,
+        MOVE_LEFT,
+        MOVE_RIGHT,
+        MOVE_FORWARD,
+        MOVE_BACKWARD,
+        QUIT_AUTO_PILOT,
+        MOVE_UP,
+        MOVE_DOWN,
+        TURN_LEFT,
+        TURN_RIGHT,
+        GIM_UP,
+        GIM_DOWN,
+    ) = range(14)
+
+QWERTY_CTRL_KEYS = {
+    Ctrl.QUIT: Key.esc,
+    Ctrl.TAKEOFF: "t",
+    Ctrl.LANDING: "l",
+    Ctrl.MOVE_LEFT: "a",
+    Ctrl.MOVE_RIGHT: "d",
+    Ctrl.MOVE_FORWARD: "w",
+    Ctrl.MOVE_BACKWARD: "s",
+    Ctrl.QUIT_AUTO_PILOT: "q",
+    Ctrl.MOVE_UP: Key.up,
+    Ctrl.MOVE_DOWN: Key.down,
+    Ctrl.TURN_LEFT: Key.left,
+    Ctrl.TURN_RIGHT: Key.right,
+    Ctrl.GIM_UP: "u",
+    Ctrl.GIM_DOWN: "j",
+}
+
+AZERTY_CTRL_KEYS = QWERTY_CTRL_KEYS.copy()
+AZERTY_CTRL_KEYS.update(
+    {
+        Ctrl.MOVE_LEFT: "q",
+        Ctrl.MOVE_RIGHT: "d",
+        Ctrl.MOVE_FORWARD: "z",
+        Ctrl.MOVE_BACKWARD: "s",
+    }
+)
+
+class KeyboardCtrl(Listener):
+    end_control = 0
+    def __init__(self, ctrl_keys=None):
+        self._ctrl_keys = self._get_ctrl_keys(ctrl_keys)
+        self._key_pressed = defaultdict(lambda: False)
+        self._last_action_ts = defaultdict(lambda: 0.0)
+        super().__init__(on_press=self._on_press, on_release=self._on_release)
+        global end_control
+        self.start()
+
+    def _on_press(self, key):
+        if isinstance(key, KeyCode):
+            self._key_pressed[key.char] = True
+        elif isinstance(key, Key):
+            self._key_pressed[key] = True
+        if self._key_pressed[self._ctrl_keys[Ctrl.QUIT_AUTO_PILOT]]:
+            print('quit auto pilot')
+            self.end_control = 1 # 1이면 오토파일럿 중지
+        if self._key_pressed[self._ctrl_keys[Ctrl.QUIT]]:
+            return False
+        else:
+            return True
+
+    def _on_release(self, key):
+        if isinstance(key, KeyCode):
+            self._key_pressed[key.char] = False
+        elif isinstance(key, Key):
+            self._key_pressed[key] = False
+        return True
+
+    def quit(self):
+        return not self.running or self._key_pressed[self._ctrl_keys[Ctrl.QUIT]]
+
+    def gim_up(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.GIM_UP]]
+
+    def gim_down(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.GIM_DOWN]]
+
+    def _axis(self, left_key, right_key):
+        return 50 * ( # 원래 50이 아니라 100인데, 속도 반으로 줄임
+            int(self._key_pressed[right_key]) - int(self._key_pressed[left_key])
+        )
+
+    def roll(self):
+        return self._axis(
+            self._ctrl_keys[Ctrl.MOVE_LEFT],
+            self._ctrl_keys[Ctrl.MOVE_RIGHT]
+        )
+
+    def pitch(self):
+        return self._axis(
+            self._ctrl_keys[Ctrl.MOVE_BACKWARD],
+            self._ctrl_keys[Ctrl.MOVE_FORWARD]
+        )
+
+    def yaw(self):
+        return self._axis(
+            self._ctrl_keys[Ctrl.TURN_LEFT],
+            self._ctrl_keys[Ctrl.TURN_RIGHT]
+        )
+
+    def throttle(self):
+        return self._axis(
+            self._ctrl_keys[Ctrl.MOVE_DOWN],
+            self._ctrl_keys[Ctrl.MOVE_UP]
+        )
+
+    def has_piloting_cmd(self):
+        return (
+            bool(self.roll())
+            or bool(self.pitch())
+            or bool(self.yaw())
+            or bool(self.throttle())
+        )
+
+    def _rate_limit_cmd(self, ctrl, delay):
+        now = time.time()
+        if self._last_action_ts[ctrl] > (now - delay):
+            return False
+        elif self._key_pressed[self._ctrl_keys[ctrl]]:
+            self._last_action_ts[ctrl] = now
+            return True
+        else:
+            return False
+
+    def takeoff(self):
+        return self._rate_limit_cmd(Ctrl.TAKEOFF, 2.0)
+
+    def landing(self):
+        return self._rate_limit_cmd(Ctrl.LANDING, 2.0)
+
+    def _get_ctrl_keys(self, ctrl_keys):
+        # Get the default ctrl keys based on the current keyboard layout:
+        if ctrl_keys is None:
+            ctrl_keys = QWERTY_CTRL_KEYS
+            try:
+                # Olympe currently only support Linux
+                # and the following only works on *nix/X11...
+                keyboard_variant = (
+                    subprocess.check_output(
+                        "setxkbmap -query | grep 'variant:'|"
+                        "cut -d ':' -f2 | tr -d ' '",
+                        shell=True,
+                    )
+                    .decode()
+                    .strip()
+                )
+            except subprocess.CalledProcessError:
+                pass
+            else:
+                if keyboard_variant == "azerty":
+                    ctrl_keys = AZERTY_CTRL_KEYS
+        return ctrl_keys
+
+class StreamingExample(threading.Thread):
+    time_tag = 0 # 태그 놓치는 시간이 길이지면 착륙
+    time_time = time.time()
+    time_time_prev = time.time()
+    tag_detected = []
+    gimbal_angle = 0
+    gim_ang = [0,0,0] # xyz
+    drn_prev = np.array([[0.0],[0.0],[0.0]]) # xyz
+    drn = np.array([[0.0],[0.0],[0.0]]) # xyz
+    drn_i = np.array([[0.0],[0.0],[0.0]]) # xyz
+    d_drn = np.array([[0.0],[0.0],[0.0]])
+    can_i_move = 0
+    can_i_move_original = 0
+
+    center_x = -1
+    center_y = -1
+    # detector = apriltag.Detector()
+    detector = pupil_apriltags.Detector()
+    camera_params = [920.6649,920.4479,652.8415,355.9656]
+
+    def __init__(self):
+        # Create the olympe.Drone object from its IP address
+        self.drone = olympe.Drone(DRONE_IP)
+        self.tempd = tempfile.mkdtemp(prefix="olympe_streaming_test_")
+        # print("Olympe streaming example output dir: {}".format(self.tempd))
+        self.h264_frame_stats = []
+        self.h264_stats_file = open(
+            os.path.join(self.tempd, 'h264_stats.csv'), 'w+')
+        self.h264_stats_writer = csv.DictWriter(
+            self.h264_stats_file, ['fps', 'bitrate'])
+        self.h264_stats_writer.writeheader()
+        self.frame_queue = queue.Queue()
+        self.flush_queue_lock = threading.Lock()
+        super().__init__()
+        super().start()
+
+    def start(self):
+        # Connect the the drone
+        self.drone.connect()
+
+        # Setup your callback functions to do some live video processing
+        self.drone.set_streaming_callbacks(
+            raw_cb=self.yuv_frame_cb,
+        )
+        # Start video streaming
+        self.drone.start_video_streaming()
+
+    def stop(self):
+        # Properly stop the video stream and disconnect
+        self.drone.stop_video_streaming()
+        self.drone.disconnect()
+        self.h264_stats_file.close()
+
+    def yuv_frame_cb(self, yuv_frame):
+        """
+        This function will be called by Olympe for each decoded YUV frame.
+
+            :type yuv_frame: olympe.VideoFrame
+        """
+        yuv_frame.ref()
+        self.frame_queue.queue.clear() # 딜레이 줄이기 위함 - 나중에 queue 안쓰는 방향으로 코드 수정
+        self.frame_queue.put_nowait(yuv_frame)
+
+    def start_cb(self):
+        pass
+    def end_cb(self):
+        pass
+
+    def mov_gim(self,pch):
+        self.drone(set_target(
+            gimbal_id = 0,
+            control_mode="position",
+            yaw_frame_of_reference="none",   # None instead of absolute
+            yaw = 0.0,
+            pitch_frame_of_reference="absolute",
+            pitch = pch,
+            roll_frame_of_reference="none",     # None instead of absolute
+            roll = 0.0,
+        ))
+
+    def show_yuv_frame(self, window_name, yuv_frame):
+        # print('DETECTion start')
+        height = 720
+        time_now = time.time()
+
+        # convert pdraw YUV flag to OpenCV YUV flag
+        cv2_cvt_color_flag = {
+            olympe.PDRAW_YUV_FORMAT_I420: cv2.COLOR_YUV2BGR_I420,
+            olympe.PDRAW_YUV_FORMAT_NV12: cv2.COLOR_YUV2BGR_NV12,
+        # }[info["yuv"]["format"]]
+        }[1]
+        
+        # yuv to Grayscale
+        # self.cv2frame = yuv_frame.as_ndarray()[:-1][:720]
+        frm = yuv_frame.as_ndarray()[:-1][:720]
+        self.cv2frame = frm
+
+        # self.tag_detected = self.detector.detect(self.cv2frame)
+        self.tag_detected = self.detector.detect(self.cv2frame,estimate_tag_pose = True, camera_params = self.camera_params, tag_size = 0.15)
+        
+        self.center_x = -1 # 놓치는거 방지 하기 위한 변수 -1 이면 놓침
+
+        self.b = 0
+        if len(self.tag_detected) > 0: # 이 부분이 오래 걸리면 0.1초 정도 걸린다. - 최대한 줄여보기
+            a = time.time()
+            tag = self.tag_detected[0]
+
+            rotM = tag.pose_R
+            thetaZ = math.atan2(rotM[1, 0], rotM[0, 0])*180.0/math.pi
+            thetaY = math.atan2(-1.0*rotM[2, 0], math.sqrt(rotM[2, 1]**2 + rotM[2, 2]**2))*180.0/math.pi
+            thetaX = math.atan2(rotM[2, 1], rotM[2,2])*180.0/math.pi
+
+            self.gim_ang = [thetaX,thetaY,thetaZ]
+
+            theta = math.atan(tag.pose_t[1]/abs(tag.pose_t[2])) # * 180/3.141592
+            self.gimbal_angle = self.drone.get_state(olympe.messages.gimbal.attitude)['pitch_absolute']
+            
+            # 짐벌 각도 수정 - 이거를 병렬로 돌려야 하나??
+            drone_angle = -1 * (self.gimbal_angle * 3.141592 / 180 - theta)
+            pch = -1 * drone_angle * 180/3.141592
+            gim = threading.Thread(target = StreamingExample.mov_gim,args = (self,pch,))
+            gim.start()
+
+            drone_x = tag.pose_t[0] # 좌 우
+            drone_y = math.cos(drone_angle) * (tag.pose_t[1] ** 2 + tag.pose_t[2] ** 2) ** 0.5 # distance
+            drone_z = math.sin(drone_angle) * (tag.pose_t[1] ** 2 + tag.pose_t[2] ** 2) ** 0.5 # altitude
+
+            self.drn_prev = self.drn
+            self.drn_i += self.drn
+            self.drn = [drone_x , drone_y, drone_z]
+            self.drn = np.array(self.drn,dtype = float)
+            self.d_drn = self.drn - self.drn_prev
+
+            self.time_time_prev = self.time_time
+            self.time_time = time.time() # PID 제어를 위해 필요하다.
+
+            # 중심 좌표 업데이트
+            self.center_x = tag.center[0]
+            self.center_y = tag.center[1]
+
+            cv2.circle(self.cv2frame, tuple(tag.corners[3].astype(int)), 4,(100,0,0), 2) # left-bottom
+            cv2.circle(self.cv2frame, tuple(tag.center.astype(int)), 4,(255,0,0), 2) # center
+            if self.can_i_move_original == self.can_i_move :
+                self.can_i_move += 1
+            self.b = time.time() - a
+            ######## 여기까지 Tag가 보일때 ########
+        else :
+            tag = 0 # imshow 때문.
+
+        self.dt = time.time()-time_now
+        # Use OpenCV to show this frame
+        # 글자 표시할게 있으면, 화면 출력 직전에 하기
+        txt_scrn = []
+        txt_scrn.append('Distance')
+        txt_scrn.append('x : {}'.format(self.drn[0]))
+        txt_scrn.append('y : {}'.format(self.drn[1]))
+        txt_scrn.append('z : {}'.format(self.drn[2]))
+        txt_scrn.append('')
+        txt_scrn.append('Angle')
+        txt_scrn.append('x : {:.4f}'.format(self.gim_ang[0]))
+        txt_scrn.append('y : {:.4f}'.format(self.gim_ang[1]))
+        txt_scrn.append('z : {:.4f}'.format(self.gim_ang[2]))
+        txt_scrn.append('')
+        txt_scrn.append('time : {:.4f}'.format(self.dt))
+        txt_scrn.append('time : {:.4f}'.format(self.b))
+
+        for i in range(len(txt_scrn)):
+            cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
+                        cv2.FONT_HERSHEY_COMPLEX, 1, (255, 50, 0), 2, lineType=cv2.LINE_AA)
+        cv2.imshow(window_name, self.cv2frame)
+        # cv2.imshow("0", frm)
+        cv2.waitKey(1)  # please OpenCV for 1 ms...
+        # print(self.dt)
+        # print('detection end')
+        
+    def run(self):
+        window_name = "Streaming"
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        main_thread = next(
+            filter(lambda t: t.name == "MainThread", threading.enumerate())
+        )
+        while main_thread.is_alive():
+            with self.flush_queue_lock:
+                try:
+                    yuv_frame = self.frame_queue.get(timeout=0.01)
+                except queue.Empty:
+                    continue
+                try:
+                    self.show_yuv_frame(window_name, yuv_frame)
+                except Exception:
+                    # We have to continue popping frame from the queue even if
+                    # we fail to show one frame
+                    traceback.print_exc()
+                finally:
+                    # Don't forget to unref the yuv frame. We don't want to
+                    # starve the video buffer pool
+                    yuv_frame.unref()
+        cv2.destroyWindow(window_name)
+
+    def kbrd(self): # 여기 없어도 될거 같다.
+        control = KeyboardCtrl()
+        while not control.quit():
+            if control.takeoff():
+                self.drone(TakeOff())
+            elif control.landing():
+                self.drone(Landing())
+                print("Drone has Landed")
+                print("Press ESC to end")
+
+            if control.has_piloting_cmd():
+                self.drone(
+                        PCMD(
+                        1,
+                        control.roll(),
+                        control.pitch(),
+                        control.yaw(),
+                        control.throttle(),
+                        timestampAndSeqNum=0,
+                    )
+                )
+
+            else:
+                self.drone(PCMD(0, 0, 0, 0, 0, timestampAndSeqNum=0))
+            time.sleep(0.05)
+
+            if control.gim_up():
+                time.sleep(0.3) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
+                print(1,self.gimbal_angle)
+                self.gimbal_angle += 5
+                if self.gimbal_angle > 90:
+                    self.gimbal_angle = -90
+                print(2,self.gimbal_angle)
+
+                self.drone(set_target(
+                    gimbal_id = 0,
+                    control_mode="position",
+                    yaw_frame_of_reference="none",   # None instead of absolute
+                    yaw = 0.0,
+                    pitch_frame_of_reference="absolute",
+                    pitch = self.gimbal_angle, # 45.0
+                    roll_frame_of_reference="none",     # None instead of absolute
+                    roll = 0.0,
+                # )).wait().success()
+                ))
+            elif control.gim_down():
+                time.sleep(0.3)
+                print(1,self.gimbal_angle)
+                self.gimbal_angle -= 5
+                if self.gimbal_angle < -90:
+                    self.gimbal_angle = 90
+                print(2,self.gimbal_angle)
+
+                self.drone(set_target(
+                    gimbal_id = 0,
+                    control_mode="position",
+                    yaw_frame_of_reference="none",   # None instead of absolute
+                    yaw = 0.0,
+                    pitch_frame_of_reference="absolute",
+                    pitch = self.gimbal_angle, # 45.0
+                    roll_frame_of_reference="none",     # None instead of absolute
+                    roll = 0.0,
+                ))
+
+if __name__ == "__main__":
+    strm = StreamingExample()
+    # Start the video stream
+    strm.start()
+    strm.can_i_move_original = 0
+    # 드론 가지고 오기 - streaming 에서 이미 드론을 받아왔으므로 거기서 불러와야 한다.
+    drone = strm.drone
+    # Perform some live video processing while the drone is flying
+
+    strm.gimbal_angle = 0
+
+    print(DRONE_IP)
+    control = KeyboardCtrl()
+
+    # 짐벌 최고속도
+    drone(
+        olympe.messages.gimbal.set_max_speed(0, 10, 3600, 30, _timeout=10, _no_expect=False, _float_tol=(0.1, 0.1)) # 짐벌 id, yaw pitch roll
+    ) # 세번째 숫자가 짐벌 속도 큰 숫자로 두기
+
+    # 로그 안되는 듯
+    # drone(olympe.log.set_config())
+
+# # # # ###################### 여기서 부터 비행 시작 ####################
+
+    print('Set gimbal to 0deg')
+    drone(set_target(
+            gimbal_id = 0,
+            control_mode="position",
+            yaw_frame_of_reference="none",   # None instead of absolute
+            yaw = 0.0,
+            pitch_frame_of_reference="absolute",
+            pitch = strm.gimbal_angle, # 45.0
+            roll_frame_of_reference="none",     # None instead of absolute
+            roll = 0.0,
+        )).wait().success()
+    time.sleep(3)
+
+    # # 드론이 날고 있지 않을때 이륙
+    if drone(FlyingStateChanged(state="hovering", _policy="check")): 
+        print('Hovering')
+    else :
+        print('Takeoff')
+
+        assert drone(
+                TakeOff()
+            ).wait().success()
+
+    ### 테스트 용 코드 - 여기다가 무한루프 만들면 아래 코드 안돌아감
+    # print('Test')
+    # print('Press U or J to move gimbal')
+    # a = time.time()
+
+    # while 1: # 짐벌 수동 조작 확인용
+    #     strm.kbrd()
+
+    # print('Test end')
+
+################################################
+
+# #     # # Apriltag가 보이지 않고, 키보드 입력 아닐때
+
+    # 이동하는데 필요한 변수들
+    mov = [0,0,0,0] # forward, right, up, clockwise
+
+    # 시뮬레이션 용
+    kf_sim = [10,0,0] # forward pdi
+    kr_sim = [30,0,0] # right pdi # 50,0,0
+    kc_sim = [10,0,0] # clockwise pdi
+
+    # 실제 드론 용
+    kf_real = [0.7,0,0]
+    kr_real = [0.7,0,0]
+    kc_real = [0.7,0,0]
+
+    if DRONE_IP == "10.202.0.1" : # 시뮬레이션
+        kf = kf_sim
+        kr = kr_sim
+        kc = kc_sim
+
+    else : # 실제
+        kf = kf_real
+        kr = kr_real
+        kc = kc_real
+
+################################################
+
+    while strm.center_x == -1 and control.end_control == 0:
+
+        # 이륙 후 Apriltag 찾을때 - 더 좋은 방법이 있을 듯
+        if strm.gimbal_angle < -120 : # -120
+            strm.gimbal_angle = 30
+        else :
+            strm.gimbal_angle = strm.gimbal_angle - 1
+
+        drone(set_target(
+            gimbal_id = 0,
+            control_mode="position",
+            yaw_frame_of_reference="none",   # None instead of absolute
+            yaw = 0.0,
+            pitch_frame_of_reference="absolute",
+            pitch = strm.gimbal_angle, # 45.0
+            roll_frame_of_reference="none",     # None instead of absolute
+            roll = 0.0,
+        )).wait()
+    print('Tag found')
+
+    # 키보드 조종으로 전환하지 않았을때
+    while control.end_control == 0:
+        # if strm.can_i_move_original < strm.can_i_move:
+            # print('can i move :', strm.can_i_move_original)
+            # print('strm : ',strm.can_i_move)
+            # print()
+
+        if strm.can_i_move_original < strm.can_i_move: # 이 조건을 넣는게 맞는지 잘 모르겠다
+                                        # 뒤에 조건이 없으면 태그를 detection하는 순간에 이동 명령이 평균 10회 정도
+                                        # 들어가기 때문에 이걸 1회로 제한하기 위한 부분이다.
+            strm.can_i_move_original += 1 # 한번만 하기 위함
+            if strm.center_x > -1: # 태그가 보일때
+                time_now = time.time()
+                dt = strm.time_time - strm.time_time_prev
+                # if DRONE_IP == "10.202.0.1" : # 시뮬레이션 - 나중에 if문 지우기
+                # Forward
+                if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면
+                # if abs(strm.y) < 0.001: # 시뮬레이션인지 실제인지 보고 수정하기
+                    mov[0] = kf[0] * strm.drn[1] + kf[1] * strm.d_drn[1]/dt + kf[2] * strm.drn_i[1]
+                    print('Moving Forward {}'.format(mov[0]))
+
+                # Right
+                if abs(strm.center_x - 640) > 100 : # 1280 / 2 = 640 : 픽셀을 재는 방향이 오른쪽에서 왼쪽인 듯
+                    mov[1] = kr[0] * strm.drn[0] + kr[1] * strm.d_drn[0]/dt + kr[2] * strm.drn_i[0]
+                    print('Moving right {}'.format(mov[1]))
+
+                # Landing
+                if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
+                    drone(Landing())
+                    print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
+
+                # else : # 실제 드론
+
+                #     # Forward
+                #     if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면
+                #     # if abs(strm.y) < 0.001: # 시뮬레이션인지 실제인지 보고 수정하기
+                #         # mov[0] = dist
+                #         mov[0] = kf_real[0] * strm.drn[1] # p control 하기 위함
+                #         print('Moving Forward {}'.format(mov[0]))
+                #         # if control.end_control != 0: #비상 정지
+                #         #     break
+
+                #     elif strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 80: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
+                #         drone(Landing())
+                #         print('landing')
+
+                #     # Right
+                #     if abs(strm.center_x - 640) > 100 : # 1280 / 2 = 640 : 픽셀을 재는 방향이 오른쪽에서 왼쪽인 듯
+                #         # mov_rgt = dist
+                #         mov[1] = kr_real[0] * strm.drn[0]
+                #         print('Moving right {}'.format(mov[1]))
+
+                # PCMD로 이동
+                drone(
+                        PCMD(
+                        1,
+                        mov[1], # roll
+                        mov[0], # pitch
+                        mov[3], # yaw
+                        mov[2], # throttle
+                        timestampAndSeqNum=0,
+                    )
+                )
+                
+                # print('이동 끝')
+                strm.time_tag = time.time() # 태그 놓칠때 - 이거는 방법 바꾸면 지우기
+
+        else : # can_i_move >= strm_can_i_move
+            if strm.center_x == -1:
+                if strm.gimbal_angle < -120 :
+                        strm.gimbal_angle = 30
+                else:
+                    strm.gimbal_angle = strm.gimbal_angle - 1
+
+                drone(set_target(
+                    gimbal_id = 0,
+                    control_mode="position",
+                    yaw_frame_of_reference="none",   # None instead of absolute
+                    yaw = 0.0,
+                    pitch_frame_of_reference="absolute",
+                    pitch = strm.gimbal_angle, # 45.0
+                    roll_frame_of_reference="none",     # None instead of absolute
+                    roll = 0.0,
+                )).wait().success()
+
+                # 5초 이상 태그를 못 찾으면 착륙
+                if time.time() - strm.time_tag > 10:
+                    drone(Landing())
+
+    ############# *중요* 비상 조종용
+
+    print('keyborad control start')
+    print('Press esc to end')
+    strm.kbrd()
+
+'''
+Log :
+수정 된 것들
+streaming_example -> strm
+PD Control
+화면에 글자 출력 쉽게
+짐벌 수동조작 가능
+변수들 배열로 저장
+시뮬레이션이랑 실제랑 계수만 다르게 하고 이동하는 코드는 동일하게 바꾸기
+
+수정할 것들
+드론이 뒤로 이동하지 않음
+
+
+'''
