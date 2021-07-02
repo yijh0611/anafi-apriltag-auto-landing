@@ -33,6 +33,9 @@ from olympe.messages.gimbal import set_target
 from olympe.messages.move import extended_move_by
 
 olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}})
+# github test line
+# test 1234
+#1234
 
 # 드론 와이파이 인지 아닌지 자동 판별
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -681,6 +684,7 @@ PD Control
 
 수정할 것들
 드론이 뒤로 이동하지 않음
+git hub test
 
 
 '''
