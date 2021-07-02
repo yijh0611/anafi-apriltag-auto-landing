@@ -47,7 +47,6 @@ try: # 시뮬레이션
 except: # 드론 연결
     DRONE_IP = '192.168.42.1' # 드론
 
-
 class Ctrl(Enum):
     (
         QUIT,
