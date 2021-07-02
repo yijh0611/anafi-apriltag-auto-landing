@@ -217,7 +217,7 @@ class StreamingExample(threading.Thread):
     drn_prev = np.array([[0.0],[0.0],[0.0]]) # xyz
     drn = np.array([[0.0],[0.0],[0.0]]) # xyz
     drn_i = np.array([[0.0],[0.0],[0.0]]) # xyz
-    d_drn = np.array([[0.0],[0.0],[0.0]])
+    d_drn = np.array([[0.0],[0.0],[0.0]]) # 거리 차이
     can_i_move = 0
     can_i_move_original = 0
 
@@ -296,13 +296,10 @@ class StreamingExample(threading.Thread):
         cv2_cvt_color_flag = {
             olympe.PDRAW_YUV_FORMAT_I420: cv2.COLOR_YUV2BGR_I420,
             olympe.PDRAW_YUV_FORMAT_NV12: cv2.COLOR_YUV2BGR_NV12,
-        # }[info["yuv"]["format"]]
         }[1]
         
         # yuv to Grayscale
-        # self.cv2frame = yuv_frame.as_ndarray()[:-1][:720]
-        frm = yuv_frame.as_ndarray()[:-1][:720]
-        self.cv2frame = frm
+        self.cv2frame = yuv_frame.as_ndarray()[:-1][:720]
 
         # self.tag_detected = self.detector.detect(self.cv2frame)
         self.tag_detected = self.detector.detect(self.cv2frame,estimate_tag_pose = True, camera_params = self.camera_params, tag_size = 0.15)
@@ -377,7 +374,6 @@ class StreamingExample(threading.Thread):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
                         cv2.FONT_HERSHEY_COMPLEX, 1, (255, 50, 0), 2, lineType=cv2.LINE_AA)
         cv2.imshow(window_name, self.cv2frame)
-        # cv2.imshow("0", frm)
         cv2.waitKey(1)  # please OpenCV for 1 ms...
         # print(self.dt)
         # print('detection end')
@@ -474,11 +470,9 @@ if __name__ == "__main__":
     strm = StreamingExample()
     # Start the video stream
     strm.start()
-    strm.can_i_move_original = 0
+    strm.can_i_move_original = 0 # 연산이 끝나고 이동을 하기 위한 변수
     # 드론 가지고 오기 - streaming 에서 이미 드론을 받아왔으므로 거기서 불러와야 한다.
     drone = strm.drone
-    # Perform some live video processing while the drone is flying
-
     strm.gimbal_angle = 0
 
     print(DRONE_IP)
@@ -505,7 +499,7 @@ if __name__ == "__main__":
             roll_frame_of_reference="none",     # None instead of absolute
             roll = 0.0,
         )).wait().success()
-    time.sleep(3)
+    time.sleep(2)
 
     # # 드론이 날고 있지 않을때 이륙
     if drone(FlyingStateChanged(state="hovering", _policy="check")): 
@@ -578,19 +572,14 @@ if __name__ == "__main__":
 
     # 키보드 조종으로 전환하지 않았을때
     while control.end_control == 0:
-        # if strm.can_i_move_original < strm.can_i_move:
-            # print('can i move :', strm.can_i_move_original)
-            # print('strm : ',strm.can_i_move)
-            # print()
-
-        if strm.can_i_move_original < strm.can_i_move: # 이 조건을 넣는게 맞는지 잘 모르겠다
+        if strm.can_i_move_original < strm.can_i_move: # 이 조건을 넣는게 맞는지 잘 모르겠음
                                         # 뒤에 조건이 없으면 태그를 detection하는 순간에 이동 명령이 평균 10회 정도
                                         # 들어가기 때문에 이걸 1회로 제한하기 위한 부분이다.
             strm.can_i_move_original += 1 # 한번만 하기 위함
             if strm.center_x > -1: # 태그가 보일때
                 time_now = time.time()
                 dt = strm.time_time - strm.time_time_prev
-                # if DRONE_IP == "10.202.0.1" : # 시뮬레이션 - 나중에 if문 지우기
+
                 # Forward
                 if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면
                 # if abs(strm.y) < 0.001: # 시뮬레이션인지 실제인지 보고 수정하기
@@ -606,27 +595,6 @@ if __name__ == "__main__":
                 if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
                     drone(Landing())
                     print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
-
-                # else : # 실제 드론
-
-                #     # Forward
-                #     if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면
-                #     # if abs(strm.y) < 0.001: # 시뮬레이션인지 실제인지 보고 수정하기
-                #         # mov[0] = dist
-                #         mov[0] = kf_real[0] * strm.drn[1] # p control 하기 위함
-                #         print('Moving Forward {}'.format(mov[0]))
-                #         # if control.end_control != 0: #비상 정지
-                #         #     break
-
-                #     elif strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 80: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
-                #         drone(Landing())
-                #         print('landing')
-
-                #     # Right
-                #     if abs(strm.center_x - 640) > 100 : # 1280 / 2 = 640 : 픽셀을 재는 방향이 오른쪽에서 왼쪽인 듯
-                #         # mov_rgt = dist
-                #         mov[1] = kr_real[0] * strm.drn[0]
-                #         print('Moving right {}'.format(mov[1]))
 
                 # PCMD로 이동
                 drone(
@@ -680,10 +648,9 @@ PD Control
 짐벌 수동조작 가능
 변수들 배열로 저장
 시뮬레이션이랑 실제랑 계수만 다르게 하고 이동하는 코드는 동일하게 바꾸기
+github upload test
 
 수정할 것들
-드론이 뒤로 이동하지 않음
-git hub test
-
+드론이 뒤로 이동하지 않음 - 뒤로 이동할 필요가 있나? 회전을 하는게 더 좋은가?
 
 '''
