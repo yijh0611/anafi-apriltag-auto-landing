@@ -361,11 +361,11 @@ class StreamingExample(threading.Thread):
         txt_scrn.append('x : {}'.format(self.drn[0]))
         txt_scrn.append('y : {}'.format(self.drn[1]))
         txt_scrn.append('z : {}'.format(self.drn[2]))
-        txt_scrn.append('')
-        txt_scrn.append('Angle')
-        txt_scrn.append('x : {:.4f}'.format(self.gim_ang[0]))
-        txt_scrn.append('y : {:.4f}'.format(self.gim_ang[1]))
-        txt_scrn.append('z : {:.4f}'.format(self.gim_ang[2]))
+        # txt_scrn.append('')
+        # txt_scrn.append('Angle')
+        # txt_scrn.append('x : {:.4f}'.format(self.gim_ang[0]))
+        # txt_scrn.append('y : {:.4f}'.format(self.gim_ang[1]))
+        # txt_scrn.append('z : {:.4f}'.format(self.gim_ang[2]))
         txt_scrn.append('')
         txt_scrn.append('time : {:.4f}'.format(self.dt))
         txt_scrn.append('time : {:.4f}'.format(self.b))
@@ -514,10 +514,11 @@ if __name__ == "__main__":
     ### 테스트 용 코드 - 여기다가 무한루프 만들면 아래 코드 안돌아감
     # print('Test')
     # print('Press U or J to move gimbal')
-    # a = time.time()
+    # # a = time.time()
 
+    # strm.kbrd()
     # while 1: # 짐벌 수동 조작 확인용
-    #     strm.kbrd()
+    #     a = 1
 
     # print('Test end')
 
@@ -576,6 +577,8 @@ if __name__ == "__main__":
                                         # 뒤에 조건이 없으면 태그를 detection하는 순간에 이동 명령이 평균 10회 정도
                                         # 들어가기 때문에 이걸 1회로 제한하기 위한 부분이다.
             strm.can_i_move_original += 1 # 한번만 하기 위함
+            theta_cc = math.atan(strm.drn[0]/strm.drn[1]) * 180 / 3.141592# * 180/3.141592
+
             if strm.center_x > -1: # 태그가 보일때
                 time_now = time.time()
                 dt = strm.time_time - strm.time_time_prev
@@ -590,6 +593,10 @@ if __name__ == "__main__":
                 if abs(strm.center_x - 640) > 100 : # 1280 / 2 = 640 : 픽셀을 재는 방향이 오른쪽에서 왼쪽인 듯
                     mov[1] = kr[0] * strm.drn[0] + kr[1] * strm.d_drn[0]/dt + kr[2] * strm.drn_i[0]
                     print('Moving right {}'.format(mov[1]))
+
+                # # Clocklwise
+                # if abs(strm.center_x - 640) > 150 : # 중심이 화면 중앙에 있지 않을 때
+                #     mov[3] = theta_cc * kc[0]
 
                 # Landing
                 if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
@@ -612,6 +619,7 @@ if __name__ == "__main__":
                 strm.time_tag = time.time() # 태그 놓칠때 - 이거는 방법 바꾸면 지우기
 
         else : # can_i_move >= strm_can_i_move
+            # 태그 놓쳤을 때
             if strm.center_x == -1:
                 if strm.gimbal_angle < -120 :
                         strm.gimbal_angle = 30
