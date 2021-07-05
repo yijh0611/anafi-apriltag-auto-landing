@@ -301,8 +301,7 @@ class StreamingExample(threading.Thread):
         # yuv to Grayscale
         self.cv2frame = yuv_frame.as_ndarray()[:-1][:720]
 
-        # self.tag_detected = self.detector.detect(self.cv2frame)
-        self.tag_detected = self.detector.detect(self.cv2frame,estimate_tag_pose = True, camera_params = self.camera_params, tag_size = 0.15)
+        self.tag_detected = self.detector.detect(self.cv2frame,estimate_tag_pose = True, camera_params = self.camera_params, tag_size = 0.18) # 크기 0.18 - 실제랑 같게 나오는지 확인
         
         self.center_x = -1 # 놓치는거 방지 하기 위한 변수 -1 이면 놓침
 
@@ -335,6 +334,8 @@ class StreamingExample(threading.Thread):
             self.drn_i += self.drn
             self.drn = [drone_x , drone_y, drone_z]
             self.drn = np.array(self.drn,dtype = float)
+            if DRONE_IP == '10.202.0.1': # 시뮬레이션 일때 크기 보정
+                self.drn = self.drn * 2 / 1.6
             self.d_drn = self.drn - self.drn_prev
 
             self.time_time_prev = self.time_time
@@ -530,14 +531,18 @@ if __name__ == "__main__":
     mov = [0,0,0,0] # forward, right, up, clockwise
 
     # 시뮬레이션 용
-    kf_sim = [10,0,0] # forward pdi
-    kr_sim = [30,0,0] # right pdi # 50,0,0
-    kc_sim = [10,0,0] # clockwise pdi
+    # kf_sim = [10,0,0] # forward pdi
+    # kr_sim = [30,0,0] # right pdi # 50,0,0
+    # kc_sim = [10,0,0] # clockwise pdi
+
+    kf_sim = np.array([2.5,0,0]) # forward pdi
+    kr_sim = np.array([2.5,0,0]) # right pdi # 50,0,0 
+    kc_sim = np.array([1,0,0]) # clockwise pdi
 
     # 실제 드론 용
-    kf_real = [0.7,0,0]
-    kr_real = [0.7,0,0]
-    kc_real = [0.7,0,0]
+    kf_real = np.array([2.5,0,0]) # 2.5까지는 안전한거 확인
+    kr_real = np.array([2.5,0,0])
+    kc_real = np.array([1,0,0])
 
     if DRONE_IP == "10.202.0.1" : # 시뮬레이션
         kf = kf_sim
@@ -599,7 +604,8 @@ if __name__ == "__main__":
                 #     mov[3] = theta_cc * kc[0]
 
                 # Landing
-                if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
+                # if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
+                if abs(strm.drn[1]) < 0.15: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
                     drone(Landing())
                     print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
 
@@ -658,6 +664,9 @@ PD Control
 시뮬레이션이랑 실제랑 계수만 다르게 하고 이동하는 코드는 동일하게 바꾸기
 github upload test
 
+드론 비행 가능 최저 고도 확인 : 50cm
+시뮬레이션 상의 거리랑 실제 거리가 유사하게 변환 - 시뮬레이션은 0.7배속 정도로 돌아가서 드론의 속도가 비슷하게 나오는지는 잘 모르겠음.
+ 
 수정할 것들
 드론이 뒤로 이동하지 않음 - 뒤로 이동할 필요가 있나? 회전을 하는게 더 좋은가?
 
