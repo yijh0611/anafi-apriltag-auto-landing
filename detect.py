@@ -33,9 +33,6 @@ from olympe.messages.gimbal import set_target
 from olympe.messages.move import extended_move_by
 
 olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}})
-# github test line
-# test 1234
-#1234
 
 # 드론 와이파이 인지 아닌지 자동 판별
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -371,6 +368,27 @@ class StreamingExample(threading.Thread):
         txt_scrn.append('time : {:.4f}'.format(self.dt))
         txt_scrn.append('time : {:.4f}'.format(self.b))
 
+        drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+        self.speedx = drone_speed['speedX']
+        self.speedy = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)['speedY']
+        txt_scrn.append('')
+        txt_scrn.append(f'speed x : {self.speedx}')
+        txt_scrn.append(f'speed y : {self.speedy}')
+
+        drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
+        self.alt = drone_poi['altitude']
+        txt_scrn.append(f'alt : {self.alt}')
+        # print(f'alt : {self.alt}')
+
+        # drone_poi1 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # self.alt1 = drone_poi1['altitude']
+        # txt_scrn.append(f'alt : {self.alt1}')
+
+        # drone_position = self.drone.get_state(olympe.messages.ardrone3.PilotingState.moveByChanged)
+        # self.alt2 = drone_position['dXAsked']
+        # print(f'alt : {self.alt2}')
+        # txt_scrn.append(f'alt : {self.alt2}')
+
         for i in range(len(txt_scrn)):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
                         cv2.FONT_HERSHEY_COMPLEX, 1, (255, 50, 0), 2, lineType=cv2.LINE_AA)
@@ -531,10 +549,6 @@ if __name__ == "__main__":
     mov = [0,0,0,0] # forward, right, up, clockwise
 
     # 시뮬레이션 용
-    # kf_sim = [10,0,0] # forward pdi
-    # kr_sim = [30,0,0] # right pdi # 50,0,0
-    # kc_sim = [10,0,0] # clockwise pdi
-
     kf_sim = np.array([2.5,0,0]) # forward pdi
     kr_sim = np.array([2.5,0,0]) # right pdi # 50,0,0 
     kc_sim = np.array([1,0,0]) # clockwise pdi
