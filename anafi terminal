@@ -1,0 +1,21 @@
+Terminal 1
+
+sudo systemctl start firmwared
+sphinx /opt/parrot-sphinx/usr/share/sphinx/drones/anafi4k.drone::stolen_interface=::simple_front_cam=true
+
+
+
+Terminal 2
+
+source ~/code/parrot-groundsdk/./products/olympe/linux/env/shell
+python ./git_anafi/anafi-apriltag-auto-landing/detect.py
+
+python ./file_name.py
+
+
+
+
+
+sudo python ./streaming_hak_tst.py
+
+python ./detect.py

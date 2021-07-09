@@ -5,6 +5,7 @@ from logging import getLogger
 import time
 from olympe.messages.ardrone3.Piloting import TakeOff, Landing
 
+olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}})
 # olympe.log.update_config({
 #     "handlers": {
 #         "olympe_log_file": {
@@ -35,15 +36,32 @@ if __name__ == "__main__":
     drone = olympe.Drone(DRONE_IP)#, name="toto")
     drone.connect()
 
-    a = getLogger("Olympe.drone")
-    print(123)
-    print(a.log)
-    
+    # a = getLogger("Olympe.drone")
+    # print(123)
+    # print(a.log)
+
     assert drone(TakeOff()).wait().success()
     assert drone.start_video_streaming()
+    drone(olympe.messages.ardrone3.Piloting.moveTo(0,0,0,0,10))
     time.sleep(3)
     assert drone.stop_video_streaming()
     assert drone(Landing()).wait().success()
+
+    drone_poi = drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
+    alt = drone_poi['altitude']
+    print(1)
+    a = drone(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode)
+    print(2)
+    print(type(a))
+    print(a,12312132132)
+    for i in range(10):
+        print(drone.get_state(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode))
+    drone_heading = drone.get_state(olympe.messages.ardrone3.PilotingState.moveToChanged)
+    drone_heading = drone_heading['altitude']
+    for i in range(10):
+        print(alt)
+        print(drone_poi)
+        print(drone_heading)
 
     # # # a = drone(olympe.log.get_config({
     # # #     "handlers": {
@@ -84,10 +102,10 @@ if __name__ == "__main__":
     # print(drone(olympe.log))
     print(123)
     
-    print(a.log)
-    print(getLogger("olympe.drone"))
-    print(type(getLogger("olympe.drone")))
-    print(a.log)
+    # print(a.log)
+    # print(getLogger("olympe.drone"))
+    # print(type(getLogger("olympe.drone")))
+    # print(a.log)
 
     drone.disconnect()
-    print(a.log)
+    # print(a.log)

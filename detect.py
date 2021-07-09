@@ -217,6 +217,7 @@ class StreamingExample(threading.Thread):
     d_drn = np.array([[0.0],[0.0],[0.0]]) # 거리 차이
     can_i_move = 0
     can_i_move_original = 0
+    start_log = 0 # 1 when logging
 
     center_x = -1
     center_y = -1
@@ -250,7 +251,60 @@ class StreamingExample(threading.Thread):
         )
         # Start video streaming
         self.drone.start_video_streaming()
+    
+    def log(self):
+        '''
+        드론의 속도 정보를 계속 받아서 저장하는 코드이다.
+        병렬로 돌고 있기 때문에 로그 기록하는 속도가 빠르다.
+        파일 용량이 너무 커지게 된다면 시간 간격을 두고 로그를 기록하게 수정하기.
+        
+        '''
+        log_path = '/home/aims/git_anafi/anafi-apriltag-auto-landing/logs/' # 로그 저장되는 위치
+        # log_array = np.array([['time','speed_north','speed_east','speed_down']])
+        log_array = np.array([['time','speed_north','speed_east','speed_up','North','East','Altitude']])
+        if DRONE_IP == "10.202.0.1": # 시뮬
+            name = time.strftime('log_%Y-%m-%d %H:%M:%s_sim', time.localtime(time.time()))
+        else : # 실제
+            name = time.strftime('log_%Y-%m-%d %H:%M:%s_real', time.localtime(time.time()))
+        self.time_delay = time.time()
+        self.time_log_prev = time.time()
+        self.location = np.array([0,0,0])
+        print(f'start log {name}')
+        while 1:
+            # 그냥 하면 1초만에 메모리를 다 써버려서 딜레이를 넣어야 함.
+            if time.time() > self.time_delay + 1/50 : # 초당 50번 기록 - 기록개수 제한 있는 듯(얼마인지는 잘 모르겠다.). 더 필요할거 같으면 나중에 로그파일 더 늘릴 수 있게 코드 수정하기
+                # 배열 크기 늘려서 state까지 기록 할 수 있게 수정하기. - 비행중인지 착륙중인지 이륙중인지 등
+                self.time_delay = time.time()
+                drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+                spdx = drone_speed['speedX']
+                spdy = drone_speed['speedY']
+                spdz = drone_speed['speedZ'] * (-1)
+                time_now = time.strftime('%H:%M:%s', time.localtime(time.time()))
+                
+                # 거리 추정
+                dt = time.time() - self.time_log_prev
+                self.time_log_prev = time.time()
+                # print('dt',print(type(dt)))
+                self.location = self.location + dt * np.array([spdx,spdy,spdz])
+                # print(self.location)
+                # print('loc',print(type(self.location[0])))
 
+                # tmp = np.array([[time_now,spdx,spdy,spdz]])
+                tmp = np.array([[time_now,spdx,spdy,spdz,self.location[0],self.location[1],self.location[2]]])
+
+                # 로그 합치기
+                log_array = np.append(log_array,tmp,axis = 0)
+
+                # 로그 모양 확인
+                # print(log_array.shape)
+                a,b = log_array.shape
+
+                # 로그 기록
+                if a % 50 == 0: # 1초에 한번씩 기록
+                    # print('a : ',a)
+                    np.savetxt(f'{log_path}{name}.csv', log_array, fmt = '%s', delimiter = ',')
+                    print('saved',a)
+                
     def stop(self):
         # Properly stop the video stream and disconnect
         self.drone.stop_video_streaming()
@@ -371,9 +425,11 @@ class StreamingExample(threading.Thread):
         drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
         self.speedx = drone_speed['speedX']
         self.speedy = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)['speedY']
+        spd = (self.speedx**2+self.speedy**2)**0.5
         txt_scrn.append('')
         txt_scrn.append(f'speed x : {self.speedx}')
         txt_scrn.append(f'speed y : {self.speedy}')
+        txt_scrn.append(f'speed   : {spd}')
 
         drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
         self.alt = drone_poi['altitude']
@@ -489,6 +545,13 @@ if __name__ == "__main__":
     strm = StreamingExample()
     # Start the video stream
     strm.start()
+    # start logging
+    if strm.start_log > 0 :
+        log_start = threading.Thread(target = strm.log)
+        log_start.start()
+
+    for i in range(10):
+        print(123123)
     strm.can_i_move_original = 0 # 연산이 끝나고 이동을 하기 위한 변수
     # 드론 가지고 오기 - streaming 에서 이미 드론을 받아왔으므로 거기서 불러와야 한다.
     drone = strm.drone
