@@ -217,7 +217,7 @@ class StreamingExample(threading.Thread):
     d_drn = np.array([[0.0],[0.0],[0.0]]) # 거리 차이
     can_i_move = 0
     can_i_move_original = 0
-    start_log = 0 # 1 when logging
+    start_log = 0 # 1 when logging, 0 when not logging
 
     center_x = -1
     center_y = -1
@@ -261,14 +261,14 @@ class StreamingExample(threading.Thread):
         '''
         log_path = '/home/aims/git_anafi/anafi-apriltag-auto-landing/logs/' # 로그 저장되는 위치
         # log_array = np.array([['time','speed_north','speed_east','speed_down']])
-        log_array = np.array([['time','speed_north','speed_east','speed_up','North','East','Altitude']])
+        log_array = np.array([['time','speed_north','speed_east','speed_forward','speed_right','speed_up','North','East','Forward','Right','Altitude','Heading']])
         if DRONE_IP == "10.202.0.1": # 시뮬
             name = time.strftime('log_%Y-%m-%d %H:%M:%s_sim', time.localtime(time.time()))
         else : # 실제
             name = time.strftime('log_%Y-%m-%d %H:%M:%s_real', time.localtime(time.time()))
         self.time_delay = time.time()
         self.time_log_prev = time.time()
-        self.location = np.array([0,0,0])
+        self.location = np.array([0,0,0,0,0])
         print(f'start log {name}')
         while 1:
             # 그냥 하면 1초만에 메모리를 다 써버려서 딜레이를 넣어야 함.
@@ -276,21 +276,25 @@ class StreamingExample(threading.Thread):
                 # 배열 크기 늘려서 state까지 기록 할 수 있게 수정하기. - 비행중인지 착륙중인지 이륙중인지 등
                 self.time_delay = time.time()
                 drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+                drone_hdg = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # rad
+                hdg = drone_hdg['yaw'] # rad
                 spdx = drone_speed['speedX']
                 spdy = drone_speed['speedY']
                 spdz = drone_speed['speedZ'] * (-1)
+                spdf = spdx * math.cos(hdg) + spdy * math.sin(hdg)
+                spdr = spdx * math.sin(hdg) * (-1) + spdy * math.cos(hdg)
                 time_now = time.strftime('%H:%M:%s', time.localtime(time.time()))
                 
                 # 거리 추정
                 dt = time.time() - self.time_log_prev
                 self.time_log_prev = time.time()
                 # print('dt',print(type(dt)))
-                self.location = self.location + dt * np.array([spdx,spdy,spdz])
+                self.location = self.location + dt * np.array([spdx,spdy,spdz,spdf,spdr])
                 # print(self.location)
                 # print('loc',print(type(self.location[0])))
 
                 # tmp = np.array([[time_now,spdx,spdy,spdz]])
-                tmp = np.array([[time_now,spdx,spdy,spdz,self.location[0],self.location[1],self.location[2]]])
+                tmp = np.array([[time_now,spdx,spdy,spdf,spdr,spdz,self.location[0],self.location[1],self.location[3],self.location[4],self.location[2],hdg * 180/math.pi]])
 
                 # 로그 합치기
                 log_array = np.append(log_array,tmp,axis = 0)
@@ -406,6 +410,11 @@ class StreamingExample(threading.Thread):
             tag = 0 # imshow 때문.
 
         self.dt = time.time()-time_now
+
+        # heading test
+        hdg = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # rad
+        hdg = hdg['yaw'] # rad
+
         # Use OpenCV to show this frame
         # 글자 표시할게 있으면, 화면 출력 직전에 하기
         txt_scrn = []
@@ -413,27 +422,26 @@ class StreamingExample(threading.Thread):
         txt_scrn.append('x : {}'.format(self.drn[0]))
         txt_scrn.append('y : {}'.format(self.drn[1]))
         txt_scrn.append('z : {}'.format(self.drn[2]))
-        # txt_scrn.append('')
-        # txt_scrn.append('Angle')
-        # txt_scrn.append('x : {:.4f}'.format(self.gim_ang[0]))
-        # txt_scrn.append('y : {:.4f}'.format(self.gim_ang[1]))
-        # txt_scrn.append('z : {:.4f}'.format(self.gim_ang[2]))
         txt_scrn.append('')
         txt_scrn.append('time : {:.4f}'.format(self.dt))
-        txt_scrn.append('time : {:.4f}'.format(self.b))
+        # txt_scrn.append('time : {:.4f}'.format(self.b))
+        txt_scrn.append('')
 
         drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
         self.speedx = drone_speed['speedX']
         self.speedy = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)['speedY']
         spd = (self.speedx**2+self.speedy**2)**0.5
+
+        self.spdf = self.speedx * math.cos(hdg) + self.speedy * math.sin(hdg)
+        self.spdr = self.speedx * math.sin(hdg) * (-1) + self.speedy * math.cos(hdg)
         txt_scrn.append('')
-        txt_scrn.append(f'speed x : {self.speedx}')
-        txt_scrn.append(f'speed y : {self.speedy}')
+        txt_scrn.append(f'forward : {self.spdf}')
+        txt_scrn.append(f'right   : {self.spdr}')
         txt_scrn.append(f'speed   : {spd}')
 
-        drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
-        self.alt = drone_poi['altitude']
-        txt_scrn.append(f'alt : {self.alt}')
+        # drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
+        # self.alt = drone_poi['altitude']
+        # txt_scrn.append(f'alt : {self.alt}')
         # print(f'alt : {self.alt}')
 
         # drone_poi1 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
@@ -450,8 +458,6 @@ class StreamingExample(threading.Thread):
                         cv2.FONT_HERSHEY_COMPLEX, 1, (255, 50, 0), 2, lineType=cv2.LINE_AA)
         cv2.imshow(window_name, self.cv2frame)
         cv2.waitKey(1)  # please OpenCV for 1 ms...
-        # print(self.dt)
-        # print('detection end')
         
     def run(self):
         window_name = "Streaming"
@@ -547,6 +553,8 @@ if __name__ == "__main__":
     strm.start()
     # start logging
     if strm.start_log > 0 :
+        for i in range(10):
+            print('로그 시작')
         log_start = threading.Thread(target = strm.log)
         log_start.start()
 
@@ -564,9 +572,6 @@ if __name__ == "__main__":
     drone(
         olympe.messages.gimbal.set_max_speed(0, 10, 3600, 30, _timeout=10, _no_expect=False, _float_tol=(0.1, 0.1)) # 짐벌 id, yaw pitch roll
     ) # 세번째 숫자가 짐벌 속도 큰 숫자로 두기
-
-    # 로그 안되는 듯
-    # drone(olympe.log.set_config())
 
 # # # # ###################### 여기서 부터 비행 시작 ####################
 
@@ -809,8 +814,11 @@ github upload test
 
 드론 비행 가능 최저 고도 확인 : 50cm
 시뮬레이션 상의 거리랑 실제 거리가 유사하게 변환 - 시뮬레이션은 0.7배속 정도로 돌아가서 드론의 속도가 비슷하게 나오는지는 잘 모르겠음.
+
+위치 및 속력 기록하는 로그 파일 생성 코드 추가 (수치 적분)
  
 수정할 것들
 드론이 뒤로 이동하지 않음 - 뒤로 이동할 필요가 있나? 회전을 하는게 더 좋은가?
+로그 기록시 고도는 적분하지 말고 센서에서 받아온 갑ㅅ으로 기록하는 코드 추가하기
 
 '''

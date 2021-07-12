@@ -42,26 +42,36 @@ if __name__ == "__main__":
 
     assert drone(TakeOff()).wait().success()
     assert drone.start_video_streaming()
-    drone(olympe.messages.ardrone3.Piloting.moveTo(0,0,0,0,10))
-    time.sleep(3)
+    # drone(olympe.messages.ardrone3.Piloting.moveTo(0,0,0,0,10))
+    # time.sleep(3)
     assert drone.stop_video_streaming()
     assert drone(Landing()).wait().success()
 
-    drone_poi = drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
-    alt = drone_poi['altitude']
-    print(1)
-    a = drone(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode)
-    print(2)
-    print(type(a))
-    print(a,12312132132)
-    for i in range(10):
-        print(drone.get_state(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode))
-    drone_heading = drone.get_state(olympe.messages.ardrone3.PilotingState.moveToChanged)
-    drone_heading = drone_heading['altitude']
-    for i in range(10):
-        print(alt)
-        print(drone_poi)
-        print(drone_heading)
+    # abc = drone.get_state(olympe.messages.ardrone3.PilotingState.moveByChanged) # 안됨
+    # abc = drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged) # 잘 됨
+    # abc = drone.get_state(olympe.messages.ardrone3.PilotingSettings.CirclingRadius) # 안됨
+    # abc = drone.get_state(olympe.messages.ardrone3.Piloting.Circle)
+    # abc = drone.get_state(olympe.messages.ardrone3.Piloting.moveBy)
+    # abc = drone.get_state(olympe.enums.ardrone3.PilotingState.MoveToChanged_Status)
+    # abc = drone.get_state(olympe.enums.ardrone3.PilotingState.MoveByChanged_Status)
+    abc = drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged)
+    print(abc['yaw']*180/3.141592)
+
+    # drone_poi = drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
+    # alt = drone_poi['altitude']
+    # print(1)
+    # a = drone(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode)
+    # print(2)
+    # print(type(a))
+    # print(a,12312132132)
+    # for i in range(10):
+    #     print(drone.get_state(olympe.enums.ardrone3.PilotingState.MoveToChanged_Orientation_mode))
+    # drone_heading = drone.get_state(olympe.messages.ardrone3.PilotingState.moveToChanged)
+    # drone_heading = drone_heading['altitude']
+    # for i in range(10):
+    #     print(alt)
+    #     print(drone_poi)
+    #     print(drone_heading)
 
     # # # a = drone(olympe.log.get_config({
     # # #     "handlers": {
@@ -100,7 +110,7 @@ if __name__ == "__main__":
     # # print(olympe.log)
     # # # print(drone(olympe.log.get_config))
     # print(drone(olympe.log))
-    print(123)
+    # print(123)
     
     # print(a.log)
     # print(getLogger("olympe.drone"))
