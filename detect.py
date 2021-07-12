@@ -592,6 +592,72 @@ if __name__ == "__main__":
         assert drone(
                 TakeOff()
             ).wait().success()
+    
+    # time.sleep(3)
+    # ### 테스트용 코드 - 속도 확인용
+    # # while 1:
+    # if DRONE_IP == "10.202.0.1" : # 시뮬레이션
+    #     # print(123)
+    #     abc = time.time()
+    #     tilt = 15
+    #     spd = np.array([])
+    #     spd_average = np.array([[0,0,0]])
+
+    #     # while time.time() - abc < 5:
+    #     while 1:
+    #         drone(
+    #                 PCMD(
+    #                 1,
+    #                 0, # roll
+    #                 tilt, # pitch
+    #                 0, # yaw
+    #                 0, # throttle
+    #                 timestampAndSeqNum=0,
+    #             )
+    #         )
+
+    #         drone_speed = drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+    #         speedx = drone_speed['speedX']
+    #         speedy = drone_speed['speedY']
+    #         speed = (speedx**2+speedy**2)**0.5
+
+    #         print(f'speed : {speed}\ntilt : {tilt}\n')
+
+    #         spd = np.append(spd,[speed])
+
+    #         # if 0 < spd[len(spd)-1] - spd[0] < 0.01:
+    #         #     tilt += 10
+    #         #     spd_average = np.append(spd_average,np.average(spd))
+    #         #     spd = np.array([])
+    #         #     if tilt > 100:
+    #         #         np.savetxt(f'/home/aims/Desktop/Anafi_code/logs/spd.csv', spd_average, fmt = '%s', delimiter = ',')
+    #         #         break
+    #         if time.time()-abc > 5:
+    #             if len(spd) > 30:
+    #                 if 0 < np.average(spd[25:30]) - np.average(spd[0:5]) < 0.001:
+    #                     spd_average = np.append(spd_average,np.array([[tilt,np.average(spd),time.time()-abc]]),axis = 0)
+    #                     tilt += 5
+    #                     if tilt > 100:
+    #                         np.savetxt(f'/home/aims/Desktop/Anafi_code/logs/spd.csv', spd_average, fmt = '%s', delimiter = ',')
+    #                         break
+
+    #                     # 드론 속도 초기화
+    #                     drone(
+    #                             PCMD(
+    #                             1,
+    #                             0, # roll
+    #                             0, # pitch
+    #                             0, # yaw
+    #                             0, # throttle
+    #                             timestampAndSeqNum=0,
+    #                         )
+    #                     )
+    #                     time.sleep(30)
+    #                     abc = time.time()
+    #                     spd = np.array([])
+                        
+    #                 spd = np.array([speed])
+
 
     ### 테스트 용 코드 - 여기다가 무한루프 만들면 아래 코드 안돌아감
     # print('Test')
