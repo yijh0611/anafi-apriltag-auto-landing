@@ -95,7 +95,7 @@ AZERTY_CTRL_KEYS.update(
 
 class KeyboardCtrl(Listener):
     end_control = 0
-    keyboard_spd = 50
+    keyboard_spd = 5
     def __init__(self, ctrl_keys=None):
         self._ctrl_keys = self._get_ctrl_keys(ctrl_keys)
         self._key_pressed = defaultdict(lambda: False)
@@ -479,9 +479,11 @@ class StreamingExample(threading.Thread):
         txt_scrn.append('')
         txt_scrn.append(f'input : {self.vel[0][0]}')
         txt_scrn.append(f'forward : {self.spdf}')
-        txt_scrn.append(f'input : {self.vel[1][0]}')
-        txt_scrn.append(f'right   : {self.spdr}')
+        txt_scrn.append(f'tilt : {self.tilt[0][0]}')
+        # txt_scrn.append(f'input : {self.vel[1][0]}')
+        # txt_scrn.append(f'right   : {self.spdr}')
         txt_scrn.append(f'speed   : {control.keyboard_spd}')
+
         # print(control.keyboard_spd)
 
         # txt_scrn.append(f'speed   : {spd}')
@@ -499,7 +501,7 @@ class StreamingExample(threading.Thread):
     def vel_controller(self):
         # while control.end_control == 0:
         while 1:
-            print('start velocity controller')
+            # print('start velocity controller')
             # 시간 측정
             dt = self.isacc - self.newton
 
@@ -649,19 +651,19 @@ class StreamingExample(threading.Thread):
             if control.spd_up():
                 print('spd_up')
                 time.sleep(0.1)
-                control.keyboard_spd += 5
+                control.keyboard_spd += 0.5
                 print(control.keyboard_spd)
                 # time.sleep(0.05)
-                if control.keyboard_spd > 100:
-                    control.keyboard_spd = 100
+                if control.keyboard_spd > 10:
+                    control.keyboard_spd = 10
 
             if control.spd_down():
                 print('spd_down')
                 time.sleep(0.1)
-                control.keyboard_spd -= 5
+                control.keyboard_spd -= 0.5
                 # time.sleep(0.05)
-                if control.keyboard_spd < 5:
-                    control.keyboard_spd = 5
+                if control.keyboard_spd < 0.5:
+                    control.keyboard_spd = 0.5
 
 if __name__ == "__main__":
     strm = StreamingExample()
@@ -801,8 +803,10 @@ if __name__ == "__main__":
     kr_sim = np.array([2.5,0,0]) # right PDI # 50,0,0 
     kc_sim = np.array([1,0,0]) # clockwise PDI
 
-    strm.kf_sim_tilt = np.array([1,0,0]) # forward PDI
+    strm.kf_sim_tilt = np.array([10,0,10]) # forward PDI
     strm.kr_sim_tilt = np.array([1,0,0]) # right PDI
+    strm.kt_sim_tilt = np.array([1,0,0]) # right PDI
+    strm.kc_sim_tilt = np.array([1,0,0]) # right PDI
 
     # 실제 드론 용
     kf_real = np.array([2.5,0,0])
@@ -960,5 +964,6 @@ github upload test
 드론이 뒤로 이동하지 않음 - 뒤로 이동할 필요가 있나? 회전을 하는게 더 좋은가?
 코드 실행 후에 버튼 누르면 로그 기록하는 코드 추가하기
 지금은 영상 불러오는 속도가 연산하는 속도보다 빨라서 문제가 안되지만, 연산이 빨라지게 되면 문제가 생길 수도 있다.
+키 입력으로 PID 계수 바꿀수 있게 수정 + 화면에 출력이 가능하게 하기
 
 '''
