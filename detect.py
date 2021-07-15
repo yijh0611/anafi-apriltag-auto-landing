@@ -215,12 +215,40 @@ class StreamingExample(threading.Thread):
     drn = np.array([[0.0],[0.0],[0.0]]) # xyz
     drn_i = np.array([[0.0],[0.0],[0.0]]) # xyz
     d_drn = np.array([[0.0],[0.0],[0.0]]) # 거리 차이
-    drn_vel = np.array([[0.0],[0.0]]) # 속도 차이 Pitch, Roll
-    d_drn_vel = np.array([[0.0],[0.0]]) # 속도 차이 Pitch, Roll
-    drn_i_vel = np.array([[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+
+    drn_vel = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    drn_vel_prev = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    error_vel = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    error_vel_prev = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    d_error_vel = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    i_error_vel = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
+    
     can_i_move = 0
     can_i_move_original = 0
     start_log = 0 # 1 when logging, 0 when not logging
+
+    ##### 속도 제어를 위한 변수들
+    vel = [[0],[0],[0],[0]] # forward, right, up, clockwise
+    tilt = [[0],[0],[0],[0]] # pitch, roll, throttle, clockwise
+    # 시뮬레이션 용 - 밑에서 다시 정의하기 때문에 0이어도 괜찮다.
+    kf_sim_tilt = np.array([0,0,0]) # forward PDI
+    kr_sim_tilt = np.array([0,0,0]) # right PDI
+    kt_sim_tilt = np.array([0,0,0])
+    kc_sim_tilt = np.array([0,0,0])
+    # 실제 드론 용 - 밑에서 다시 정의하기 때문에 0이어도 괜찮다.
+    kf_real_tilt = np.array([0,0,0]) # forward PDI
+    kr_real_tilt = np.array([0,0,0]) # right PDI
+    kt_real_tilt = np.array([0,0,0])
+    kc_real_tilt = np.array([0,0,0])
+
+    newton = time.time()
+    hdg = 0
+    hdg_prev = 0 # 이렇게 정의하면 처음에 시작할때 문제가 될 수도 있다. - 바로 이륙안하니까 괜찮을지도?
+                 # hdg - hdg_prev를 해야되는데, 90-0 이런식으로 될 수도 있어서 입력이 크게 들어갈 수도 있다.
+    # newton = time.time()
+    isacc = newton + 0.1
+
+    ##### 속도 제어를 위한 변수 여기까지
 
     center_x = -1
     center_y = -1
@@ -406,8 +434,10 @@ class StreamingExample(threading.Thread):
                 self.can_i_move += 1
             self.b = time.time() - a
             ######## 여기까지 Tag가 보일때 ########
-        else :
+        else : # 태그가 안보일때
             tag = 0 # imshow 때문.
+            self.vel = np.array([[0.],[0.],[0.],[0.]]) # 속도 컨트롤러 끄기 위함 - 이거는 수정해야 할 수도 있음
+            # print('stop; tag not found')
 
         self.dt = time.time()-time_now
 
@@ -449,7 +479,72 @@ class StreamingExample(threading.Thread):
                         cv2.FONT_HERSHEY_COMPLEX, 1, (255, 50, 0), 2, lineType=cv2.LINE_AA)
         cv2.imshow(window_name, self.cv2frame)
         cv2.waitKey(1)  # please OpenCV for 1 ms...
-        
+
+    def vel_controller(self):
+        while control.end_control == 0:
+            # print('start vel_controller')
+            # 시간 측정
+            dt = self.isacc - self.newton
+            # for i in range(10):
+            # print(dt,'dt')
+            # print(self.isacc,'isacc')
+            # print(self.newton,'newton')
+            # if dt == 0:
+            #     dt = 0.01 # 처음에 생기는 오류 때문
+            self.newton = self.isacc
+            self.isacc = time.time()
+
+            # 드론 속도 받아오기
+            drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+            drone_hdg = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # radian
+            spdx = drone_speed['speedX']
+            spdy = drone_speed['speedY']
+            spdz = drone_speed['speedZ']
+            spdc = (self.hdg - self.hdg_prev) * (180/math.pi) / dt # 현재 회전 속도 얻을 수 있는지 확인해보기
+            self.hdg_prev = self.hdg
+            self.hdg = drone_hdg['yaw'] # radian
+            spdf = spdx * math.cos(self.hdg) + spdy * math.sin(self.hdg)
+            # print(type(spdf))
+            # spdf = spdf[0]
+            spdr = spdx * math.sin(self.hdg) * (-1) + spdy * math.cos(self.hdg)
+            # spdr = spdr[0]
+
+            # 에러 구하기
+            # print(type(self.vel[2]))
+            self.error_vel = np.array([[self.vel[0][0]-spdf],[self.vel[1][0]-spdr],[self.vel[2][0]-spdz],[self.vel[3][0]-spdc]])
+            # print(np.shape(self.error_vel))
+            self.d_error_vel = (self.error_vel - self.error_vel_prev) / dt
+            self.error_vel_prev = self.error_vel
+            # print(self.error_vel)
+            # print(np.shape(self.error_vel * dt),129292)
+            # print(spdf)
+            # print(self.vel[0]-spdf)
+            # print(dt)
+            # print(np.shape(dt),29293)
+            # print(self.error_vel * dt)
+            # print(self.i_error_vel)
+            self.i_error_vel += self.error_vel * dt
+
+            # pitch
+            self.tilt[0] = strm.error_vel[0] * kf_tilt[0] + strm.d_error_vel[0] * kf_tilt[1] + strm.i_error_vel[0] * kf_tilt[2]
+            # roll
+            self.tilt[1] = strm.error_vel[1] * kr_tilt[0] + strm.d_error_vel[1] * kr_tilt[1] + strm.i_error_vel[1] * kr_tilt[2]
+            # throttle
+            self.tilt[2] = strm.error_vel[2] * kt_tilt[0] + strm.d_error_vel[2] * kt_tilt[1] + strm.i_error_vel[2] * kt_tilt[2]
+            # yaw
+            self.tilt[3] = strm.error_vel[3] * kc_tilt[0] + strm.d_error_vel[3] * kc_tilt[1] + strm.i_error_vel[3] * kc_tilt[2]
+
+            self.drone(
+                    PCMD(
+                    1,
+                    self.tilt[1], # roll
+                    self.tilt[0], # pitch
+                    self.tilt[3], # yaw
+                    self.tilt[2], # throttle
+                    timestampAndSeqNum=0,
+                )
+            )
+    
     def run(self):
         window_name = "Streaming"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -672,40 +767,46 @@ if __name__ == "__main__":
 # #     # # Apriltag가 보이지 않고, 키보드 입력 아닐때
 
     # 이동하는데 필요한 변수들
-    vel = [0,0,0,0] # forward, right, up, clockwise
-    tilt = [0,0,0,0] # pitch, roll, throttle, clockwise
+    # vel = [0,0,0,0] # forward, right, up, clockwise
+    # tilt = [0,0,0,0] # pitch, roll, throttle, clockwise
 
     # 시뮬레이션 용
     kf_sim = np.array([2.5,0,0]) # forward PDI
     kr_sim = np.array([2.5,0,0]) # right PDI # 50,0,0 
     kc_sim = np.array([1,0,0]) # clockwise PDI
 
-    kf_sim_tilt = np.array([1,0,0]) # forward PDI
-    kr_sim_tilt = np.array([1,0,0]) # right PDI
+    strm.kf_sim_tilt = np.array([1,0,0]) # forward PDI
+    strm.kr_sim_tilt = np.array([1,0,0]) # right PDI
 
     # 실제 드론 용
     kf_real = np.array([2.5,0,0])
     kr_real = np.array([2.5,0,0])
     kc_real = np.array([1,0,0])
 
-    kf_real_tilt = np.array([1,0,0]) # forward PDI
-    kr_real_tilt = np.array([1,0,0]) # right PDI
+    strm.kf_real_tilt = np.array([1,0,0]) # forward PDI
+    strm.kr_real_tilt = np.array([1,0,0]) # right PDI
+    strm.kt_real_tilt = np.array([1,0,0]) # right PDI
+    strm.kc_real_tilt = np.array([1,0,0]) # right PDI
 
     if DRONE_IP == "10.202.0.1" : # 시뮬레이션
         kf = kf_sim
         kr = kr_sim
         kc = kc_sim
 
-        kf_tilt = kf_sim_tilt
-        kr_tilt = kr_sim_tilt
+        kf_tilt = strm.kf_sim_tilt
+        kr_tilt = strm.kr_sim_tilt
+        kt_tilt = strm.kt_sim_tilt
+        kc_tilt = strm.kc_sim_tilt
 
     else : # 실제
         kf = kf_real
         kr = kr_real
         kc = kc_real
 
-        kf_tilt = kf_real_tilt
-        kr_tilt = kr_real_tilt
+        kf_tilt = strm.kf_real_tilt
+        kr_tilt = strm.kr_real_tilt
+        kt_tilt = strm.kt_real_tilt
+        kc_tilt = strm.kc_real_tilt
 
 ################################################
 
@@ -729,6 +830,12 @@ if __name__ == "__main__":
         )).wait()
     print('Tag found')
 
+    # 속도 컨트롤러 시작
+    print('starttttt')
+    vel_controller = threading.Thread(target = StreamingExample.vel_controller ,args = (strm,))
+    vel_controller.start()
+    print('startedddd')
+
     # 키보드 조종으로 전환하지 않았을때
     while control.end_control == 0:
         if strm.can_i_move_original < strm.can_i_move: # 이 조건을 넣는게 맞는지 잘 모르겠음
@@ -743,19 +850,27 @@ if __name__ == "__main__":
                 dt = strm.time_time - strm.time_time_prev
 
                 # Forward
-                if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면
+                if strm.gimbal_angle > -75 : # 짐벌이 바로 아래를 보지 않는 다면 - 이 조건 때문에 드론이 뒤로 날지 않는 듯하다. 이거도 나중에 수정하기
                 # if abs(strm.y) < 0.001: # 시뮬레이션인지 실제인지 보고 수정하기
-                    vel[0] = kf[0] * strm.drn[1] + kf[1] * strm.d_drn[1]/dt + kf[2] * strm.drn_i[1]
-                    print(f'Vel forward {vel[0]}')
+                    strm.vel[0] = kf[0] * strm.drn[1] + kf[1] * strm.d_drn[1]/dt + kf[2] * strm.drn_i[1] * dt
+                    print(f'Vel forward {strm.vel[0]}')
+                else : # 이거는 나중에 바꾸기
+                    strm.vel[0] = np.array([0])
+                    print(f'Vel forward {strm.vel[0]}')
 
-                # Right
+                # Right = theta_cc * kc[0]
                 if abs(strm.center_x - 640) > 100 : # 1280 / 2 = 640 : 픽셀을 재는 방향이 오른쪽에서 왼쪽인 듯
-                    vel[1] = kr[0] * strm.drn[0] + kr[1] * strm.d_drn[0]/dt + kr[2] * strm.drn_i[0]
-                    print(f'Vel right {vel[1]}')
+                    strm.vel[1] = kr[0] * strm.drn[0] + kr[1] * strm.d_drn[0]/dt + kr[2] * strm.drn_i[0] * dt
+                    print(f'Vel right {strm.vel[1]}')
+                else : # 이거는 나중에 수정하기
+                    strm.vel[1] = np.array([0])
+                    print(f'Vel right {strm.vel[1]}')
 
                 # # Clocklwise
                 # if abs(strm.center_x - 640) > 150 : # 중심이 화면 중앙에 있지 않을 때
-                #     vel[3] = theta_cc * kc[0]
+                #     vel[3
+                # Throttle
+                # if 
 
                 # Landing
                 # if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
@@ -764,43 +879,45 @@ if __name__ == "__main__":
                     print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
 
 
-                ### 기울기 제어 ###
-                # 드론 속도 받아오기
-                drone_speed = drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
-                drone_hdg = drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # radian
-                spdx = drone_speed['speedX']
-                spdy = drone_speed['speedY']
-                hdg = drone_hdg['yaw'] # radian
-                spdf = spdx * math.cos(hdg) + spdy * math.sin(hdg)
-                spdr = spdx * math.sin(hdg) * (-1) + spdy * math.cos(hdg)
+                # ### 기울기 제어 ###
+                # # 드론 속도 받아오기
+                # drone_speed = drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
+                # drone_hdg = drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # radian
+                # spdx = drone_speed['speedX']
+                # spdy = drone_speed['speedY']
+                # hdg = drone_hdg['yaw'] # radian
+                # spdf = spdx * math.cos(hdg) + spdy * math.sin(hdg)
+                # spdr = spdx * math.sin(hdg) * (-1) + spdy * math.cos(hdg)
 
-                strm.d_drn_vel = strm.drn_vel
-                strm.drn_vel = np.array([vel[0]-spdf,vel[1]-spdr])
-                strm.drn_i_vel += strm.drn_vel
+                # strm.d_drn_vel = strm.drn_vel
+                # strm.drn_vel = np.array([vel[0]-spdf,vel[1]-spdr])
+                # strm.drn_i_vel += strm.drn_vel
 
-                # pitch
-                tilt[0] = strm.drn_vel[0] * kf_tilt[0] + strm.d_drn_vel[0] * kf_tilt[1] + strm.drn_i_vel[0] * kf_tilt[2]
+                # # pitch
+                # tilt[0] = strm.drn_vel[0] * kf_tilt[0] + strm.d_drn_vel[0] * kf_tilt[1] + strm.drn_i_vel[0] * kf_tilt[2]
                 
-                # roll
-                tilt[1] = strm.drn_vel[1] * kr_tilt[0] + strm.d_drn_vel[1] * kf_tilt[1] + strm.drn_i_vel[1] * kf_tilt[2]
+                # # roll
+                # tilt[1] = strm.drn_vel[1] * kr_tilt[0] + strm.d_drn_vel[1] * kf_tilt[1] + strm.drn_i_vel[1] * kf_tilt[2]
 
-                tilt[2] = vel[2] # throttle
-                tilt[3] = vel[3] # yaw
+                # tilt[2] = vel[2] # throttle
+                # tilt[3] = vel[3] # yaw
 
-                # PCMD로 이동
-                drone(
-                        PCMD(
-                        1,
-                        tilt[1], # roll
-                        tilt[0], # pitch
-                        tilt[3], # yaw
-                        tilt[2], # throttle
-                        timestampAndSeqNum=0,
-                    )
-                )
+                # # PCMD로 이동
+                # drone(
+                #         PCMD(
+                #         1,
+                #         tilt[1], # roll
+                #         tilt[0], # pitch
+                #         tilt[3], # yaw
+                #         tilt[2], # throttle
+                #         timestampAndSeqNum=0,
+                #     )
+                # )
                 
                 # print('이동 끝')
                 strm.time_tag = time.time() # 태그 놓칠때 - 이거는 방법 바꾸면 지우기
+            else : # 태그가 안보일때
+                pass
 
         else : # can_i_move >= strm_can_i_move
             # 태그 놓쳤을 때
