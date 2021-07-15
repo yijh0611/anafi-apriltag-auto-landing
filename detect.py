@@ -60,7 +60,9 @@ class Ctrl(Enum):
         TURN_RIGHT,
         GIM_UP,
         GIM_DOWN,
-    ) = range(14)
+        SPD_UP,
+        SPD_DOWN,
+    ) = range(16)
 
 QWERTY_CTRL_KEYS = {
     Ctrl.QUIT: Key.esc,
@@ -77,6 +79,8 @@ QWERTY_CTRL_KEYS = {
     Ctrl.TURN_RIGHT: Key.right,
     Ctrl.GIM_UP: "u",
     Ctrl.GIM_DOWN: "j",
+    Ctrl.SPD_UP: "y",
+    Ctrl.SPD_DOWN: "h",
 }
 
 AZERTY_CTRL_KEYS = QWERTY_CTRL_KEYS.copy()
@@ -91,6 +95,7 @@ AZERTY_CTRL_KEYS.update(
 
 class KeyboardCtrl(Listener):
     end_control = 0
+    keyboard_spd = 50
     def __init__(self, ctrl_keys=None):
         self._ctrl_keys = self._get_ctrl_keys(ctrl_keys)
         self._key_pressed = defaultdict(lambda: False)
@@ -128,8 +133,14 @@ class KeyboardCtrl(Listener):
     def gim_down(self):
         return self._key_pressed[self._ctrl_keys[Ctrl.GIM_DOWN]]
 
+    def spd_up(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.SPD_UP]]
+
+    def spd_down(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.SPD_DOWN]]
+
     def _axis(self, left_key, right_key):
-        return 50 * ( # 원래 50이 아니라 100인데, 속도 반으로 줄임
+        return self.keyboard_spd * ( # 원래 50이 아니라 100인데, 속도 반으로 줄임
             int(self._key_pressed[right_key]) - int(self._key_pressed[left_key])
         )
 
@@ -436,8 +447,9 @@ class StreamingExample(threading.Thread):
             ######## 여기까지 Tag가 보일때 ########
         else : # 태그가 안보일때
             tag = 0 # imshow 때문.
-            self.vel = np.array([[0.],[0.],[0.],[0.]]) # 속도 컨트롤러 끄기 위함 - 이거는 수정해야 할 수도 있음
-            # print('stop; tag not found')
+            if control.end_control == 0:
+                self.vel = np.array([[0.],[0.],[0.],[0.]]) # 속도 컨트롤러 끄기 위함 - 이거는 수정해야 할 수도 있음
+                # print('stop; tag not found')
 
         self.dt = time.time()-time_now
 
@@ -448,14 +460,14 @@ class StreamingExample(threading.Thread):
         # Use OpenCV to show this frame
         # 글자 표시할게 있으면, 화면 출력 직전에 하기
         txt_scrn = []
-        txt_scrn.append('Distance')
-        txt_scrn.append('x : {}'.format(self.drn[0]))
-        txt_scrn.append('y : {}'.format(self.drn[1]))
-        txt_scrn.append('z : {}'.format(self.drn[2]))
-        txt_scrn.append('')
-        txt_scrn.append('time : {:.4f}'.format(self.dt))
+        # txt_scrn.append('Distance')
+        # txt_scrn.append('x : {}'.format(self.drn[0]))
+        # txt_scrn.append('y : {}'.format(self.drn[1]))
+        # txt_scrn.append('z : {}'.format(self.drn[2]))
+        # txt_scrn.append('')
+        # txt_scrn.append('time : {:.4f}'.format(self.dt))
         # txt_scrn.append('time : {:.4f}'.format(self.b))
-        txt_scrn.append('')
+        # txt_scrn.append('')
 
         drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
         self.speedx = drone_speed['speedX']
@@ -465,14 +477,18 @@ class StreamingExample(threading.Thread):
         self.spdf = self.speedx * math.cos(hdg) + self.speedy * math.sin(hdg)
         self.spdr = self.speedx * math.sin(hdg) * (-1) + self.speedy * math.cos(hdg)
         txt_scrn.append('')
+        txt_scrn.append(f'input : {self.vel[0][0]}')
         txt_scrn.append(f'forward : {self.spdf}')
+        txt_scrn.append(f'input : {self.vel[1][0]}')
         txt_scrn.append(f'right   : {self.spdr}')
-        txt_scrn.append(f'speed   : {spd}')
+        txt_scrn.append(f'speed   : {control.keyboard_spd}')
+        # print(control.keyboard_spd)
+
+        # txt_scrn.append(f'speed   : {spd}')
 
         drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
         self.alt = drone_poi['altitude']
         txt_scrn.append(f'alt : {self.alt}')
-        # print(f'alt : {self.alt}')
 
         for i in range(len(txt_scrn)):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
@@ -481,16 +497,12 @@ class StreamingExample(threading.Thread):
         cv2.waitKey(1)  # please OpenCV for 1 ms...
 
     def vel_controller(self):
-        while control.end_control == 0:
-            # print('start vel_controller')
+        # while control.end_control == 0:
+        while 1:
+            print('start velocity controller')
             # 시간 측정
             dt = self.isacc - self.newton
-            # for i in range(10):
-            # print(dt,'dt')
-            # print(self.isacc,'isacc')
-            # print(self.newton,'newton')
-            # if dt == 0:
-            #     dt = 0.01 # 처음에 생기는 오류 때문
+
             self.newton = self.isacc
             self.isacc = time.time()
 
@@ -504,25 +516,12 @@ class StreamingExample(threading.Thread):
             self.hdg_prev = self.hdg
             self.hdg = drone_hdg['yaw'] # radian
             spdf = spdx * math.cos(self.hdg) + spdy * math.sin(self.hdg)
-            # print(type(spdf))
-            # spdf = spdf[0]
             spdr = spdx * math.sin(self.hdg) * (-1) + spdy * math.cos(self.hdg)
-            # spdr = spdr[0]
 
             # 에러 구하기
-            # print(type(self.vel[2]))
             self.error_vel = np.array([[self.vel[0][0]-spdf],[self.vel[1][0]-spdr],[self.vel[2][0]-spdz],[self.vel[3][0]-spdc]])
-            # print(np.shape(self.error_vel))
             self.d_error_vel = (self.error_vel - self.error_vel_prev) / dt
             self.error_vel_prev = self.error_vel
-            # print(self.error_vel)
-            # print(np.shape(self.error_vel * dt),129292)
-            # print(spdf)
-            # print(self.vel[0]-spdf)
-            # print(dt)
-            # print(np.shape(dt),29293)
-            # print(self.error_vel * dt)
-            # print(self.i_error_vel)
             self.i_error_vel += self.error_vel * dt
 
             # pitch
@@ -569,31 +568,44 @@ class StreamingExample(threading.Thread):
                     yuv_frame.unref()
         cv2.destroyWindow(window_name)
 
-    def kbrd(self): # 여기 없어도 될거 같다.
-        control = KeyboardCtrl()
+    def kbrd(self):
+        # control = KeyboardCtrl()
         while not control.quit():
             if control.takeoff():
                 self.drone(TakeOff())
+
             elif control.landing():
                 self.drone(Landing())
                 print("Drone has Landed")
                 print("Press ESC to end")
 
-            if control.has_piloting_cmd():
-                self.drone(
-                        PCMD(
-                        1,
-                        control.roll(),
-                        control.pitch(),
-                        control.yaw(),
-                        control.throttle(),
-                        timestampAndSeqNum=0,
-                    )
-                )
+            # 원래 제어 코드
+            # if control.has_piloting_cmd():
+            #     self.drone(
+            #             PCMD(
+            #             1,
+            #             control.roll(),
+            #             control.pitch(),
+            #             control.yaw(),
+            #             control.throttle(),
+            #             timestampAndSeqNum=0,
+            #         )
+            #     )
 
-            else:
-                self.drone(PCMD(0, 0, 0, 0, 0, timestampAndSeqNum=0))
-            time.sleep(0.05)
+            # else:
+            #     self.drone(PCMD(0, 0, 0, 0, 0, timestampAndSeqNum=0))
+
+            # 속도 제어기를 이용한 제어
+            if control.has_piloting_cmd(): # 속도 입력이 있을 때
+                strm.vel[0][0] = control.pitch()
+                strm.vel[1][0] = control.roll()
+                strm.vel[2][0] = control.throttle()
+                strm.vel[3][0] = control.yaw()
+
+            else: # 속도 입력이 없을 때
+                strm.vel = np.array([[0],[0],[0],[0]])
+
+            time.sleep(0.05) # 이건 왜 있는거지?
 
             if control.gim_up():
                 time.sleep(0.3) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
@@ -614,6 +626,7 @@ class StreamingExample(threading.Thread):
                     roll = 0.0,
                 # )).wait().success()
                 ))
+
             elif control.gim_down():
                 time.sleep(0.3)
                 print(1,self.gimbal_angle)
@@ -632,6 +645,23 @@ class StreamingExample(threading.Thread):
                     roll_frame_of_reference="none",     # None instead of absolute
                     roll = 0.0,
                 ))
+            
+            if control.spd_up():
+                print('spd_up')
+                time.sleep(0.1)
+                control.keyboard_spd += 5
+                print(control.keyboard_spd)
+                # time.sleep(0.05)
+                if control.keyboard_spd > 100:
+                    control.keyboard_spd = 100
+
+            if control.spd_down():
+                print('spd_down')
+                time.sleep(0.1)
+                control.keyboard_spd -= 5
+                # time.sleep(0.05)
+                if control.keyboard_spd < 5:
+                    control.keyboard_spd = 5
 
 if __name__ == "__main__":
     strm = StreamingExample()
@@ -766,10 +796,6 @@ if __name__ == "__main__":
 
 # #     # # Apriltag가 보이지 않고, 키보드 입력 아닐때
 
-    # 이동하는데 필요한 변수들
-    # vel = [0,0,0,0] # forward, right, up, clockwise
-    # tilt = [0,0,0,0] # pitch, roll, throttle, clockwise
-
     # 시뮬레이션 용
     kf_sim = np.array([2.5,0,0]) # forward PDI
     kr_sim = np.array([2.5,0,0]) # right PDI # 50,0,0 
@@ -831,10 +857,10 @@ if __name__ == "__main__":
     print('Tag found')
 
     # 속도 컨트롤러 시작
-    print('starttttt')
+    # print('starttttt')
     vel_controller = threading.Thread(target = StreamingExample.vel_controller ,args = (strm,))
     vel_controller.start()
-    print('startedddd')
+    # print('startedddd')
 
     # 키보드 조종으로 전환하지 않았을때
     while control.end_control == 0:
@@ -868,7 +894,8 @@ if __name__ == "__main__":
 
                 # # Clocklwise
                 # if abs(strm.center_x - 640) > 150 : # 중심이 화면 중앙에 있지 않을 때
-                #     vel[3
+                #     vel[3]
+
                 # Throttle
                 # if 
 
@@ -878,42 +905,6 @@ if __name__ == "__main__":
                     drone(Landing())
                     print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
 
-
-                # ### 기울기 제어 ###
-                # # 드론 속도 받아오기
-                # drone_speed = drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
-                # drone_hdg = drone.get_state(olympe.messages.ardrone3.PilotingState.AttitudeChanged) # radian
-                # spdx = drone_speed['speedX']
-                # spdy = drone_speed['speedY']
-                # hdg = drone_hdg['yaw'] # radian
-                # spdf = spdx * math.cos(hdg) + spdy * math.sin(hdg)
-                # spdr = spdx * math.sin(hdg) * (-1) + spdy * math.cos(hdg)
-
-                # strm.d_drn_vel = strm.drn_vel
-                # strm.drn_vel = np.array([vel[0]-spdf,vel[1]-spdr])
-                # strm.drn_i_vel += strm.drn_vel
-
-                # # pitch
-                # tilt[0] = strm.drn_vel[0] * kf_tilt[0] + strm.d_drn_vel[0] * kf_tilt[1] + strm.drn_i_vel[0] * kf_tilt[2]
-                
-                # # roll
-                # tilt[1] = strm.drn_vel[1] * kr_tilt[0] + strm.d_drn_vel[1] * kf_tilt[1] + strm.drn_i_vel[1] * kf_tilt[2]
-
-                # tilt[2] = vel[2] # throttle
-                # tilt[3] = vel[3] # yaw
-
-                # # PCMD로 이동
-                # drone(
-                #         PCMD(
-                #         1,
-                #         tilt[1], # roll
-                #         tilt[0], # pitch
-                #         tilt[3], # yaw
-                #         tilt[2], # throttle
-                #         timestampAndSeqNum=0,
-                #     )
-                # )
-                
                 # print('이동 끝')
                 strm.time_tag = time.time() # 태그 놓칠때 - 이거는 방법 바꾸면 지우기
             else : # 태그가 안보일때
