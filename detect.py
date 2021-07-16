@@ -19,6 +19,7 @@ import socket
 # from pupil_apriltags import Detector
 import pupil_apriltags
 import numpy as np
+import matplotlib.pyplot as plt
 
 import olympe
 from olympe.messages.ardrone3.Piloting import TakeOff, Landing, PCMD
@@ -62,11 +63,17 @@ class Ctrl(Enum):
         GIM_DOWN,
         SPD_UP,
         SPD_DOWN,
-    ) = range(16)
+        P_UP,
+        P_DOWN,
+        I_UP,
+        I_DOWN,
+        D_UP,
+        D_DOWN,
+    ) = range(22)
 
 QWERTY_CTRL_KEYS = {
     Ctrl.QUIT: Key.esc,
-    Ctrl.TAKEOFF: "t",
+    Ctrl.TAKEOFF: Key.tab,
     Ctrl.LANDING: "l",
     Ctrl.MOVE_LEFT: "a",
     Ctrl.MOVE_RIGHT: "d",
@@ -77,10 +84,17 @@ QWERTY_CTRL_KEYS = {
     Ctrl.MOVE_DOWN: Key.down,
     Ctrl.TURN_LEFT: Key.left,
     Ctrl.TURN_RIGHT: Key.right,
-    Ctrl.GIM_UP: "u",
-    Ctrl.GIM_DOWN: "j",
-    Ctrl.SPD_UP: "y",
-    Ctrl.SPD_DOWN: "h",
+    Ctrl.GIM_UP: "r",
+    Ctrl.GIM_DOWN: "f",
+    Ctrl.SPD_UP: "t",
+    Ctrl.SPD_DOWN: "g",
+    Ctrl.P_UP: "y",
+    Ctrl.P_DOWN: "h",
+    Ctrl.I_UP: "u",
+    Ctrl.I_DOWN: "j",
+    Ctrl.D_UP: "i",
+    Ctrl.D_DOWN: "k",
+    
 }
 
 AZERTY_CTRL_KEYS = QWERTY_CTRL_KEYS.copy()
@@ -138,6 +152,24 @@ class KeyboardCtrl(Listener):
 
     def spd_down(self):
         return self._key_pressed[self._ctrl_keys[Ctrl.SPD_DOWN]]
+    
+    def p_up(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.P_UP]]
+
+    def p_down(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.P_DOWN]]
+
+    def i_up(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.I_UP]]
+
+    def i_down(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.I_DOWN]]
+
+    def d_up(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.D_UP]]
+
+    def d_down(self):
+        return self._key_pressed[self._ctrl_keys[Ctrl.D_DOWN]]
 
     def _axis(self, left_key, right_key):
         return self.keyboard_spd * ( # 원래 50이 아니라 100인데, 속도 반으로 줄임
@@ -226,6 +258,9 @@ class StreamingExample(threading.Thread):
     drn = np.array([[0.0],[0.0],[0.0]]) # xyz
     drn_i = np.array([[0.0],[0.0],[0.0]]) # xyz
     d_drn = np.array([[0.0],[0.0],[0.0]]) # 거리 차이
+    spd_f_graph = np.array([0.0]) # 임시로 만든 어레이
+    graph_time = np.array([time.time()])
+    reset = 0 # 임시
 
     drn_vel = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
     drn_vel_prev = np.array([[0.0],[0.0],[0.0],[0.0]]) # 속도 차이 Pitch, Roll
@@ -240,6 +275,7 @@ class StreamingExample(threading.Thread):
 
     ##### 속도 제어를 위한 변수들
     vel = [[0],[0],[0],[0]] # forward, right, up, clockwise
+    vel_prev = [[0],[0],[0],[0]] # forward, right, up, clockwise
     tilt = [[0],[0],[0],[0]] # pitch, roll, throttle, clockwise
     # 시뮬레이션 용 - 밑에서 다시 정의하기 때문에 0이어도 괜찮다.
     kf_sim_tilt = np.array([0,0,0]) # forward PDI
@@ -462,7 +498,7 @@ class StreamingExample(threading.Thread):
         txt_scrn = []
         # txt_scrn.append('Distance')
         # txt_scrn.append('x : {}'.format(self.drn[0]))
-        # txt_scrn.append('y : {}'.format(self.drn[1]))
+        txt_scrn.append('y : {}'.format(self.drn[1]))
         # txt_scrn.append('z : {}'.format(self.drn[2]))
         # txt_scrn.append('')
         # txt_scrn.append('time : {:.4f}'.format(self.dt))
@@ -476,13 +512,34 @@ class StreamingExample(threading.Thread):
 
         self.spdf = self.speedx * math.cos(hdg) + self.speedy * math.sin(hdg)
         self.spdr = self.speedx * math.sin(hdg) * (-1) + self.speedy * math.cos(hdg)
-        txt_scrn.append('')
-        txt_scrn.append(f'input : {self.vel[0][0]}')
-        txt_scrn.append(f'forward : {self.spdf}')
-        txt_scrn.append(f'tilt : {self.tilt[0][0]}')
-        # txt_scrn.append(f'input : {self.vel[1][0]}')
-        # txt_scrn.append(f'right   : {self.spdr}')
-        txt_scrn.append(f'speed   : {control.keyboard_spd}')
+        
+        # ##### 스피드 플롯하기
+        # if self.error_vel[0] != self.error_vel_prev[0]:
+        #     self.spd_f_graph = np.array([0.0])
+        #     for i in range(10):
+        #         print(7982379324798324)
+        # self.spd_f_graph = np.append(self.spd_f_graph,self.spdf)
+        # print(np.shape(self.spd_f_graph))
+        # plt.close
+        # plt.plot(self.spd_f_graph)
+        # plt.ylabel('speed_f')
+        # plt.show(block = False)
+        # plt.pause(0.01)
+        # ##### 스피드 플롯 종료
+        
+        
+        # txt_scrn.append('')
+        # txt_scrn.append(f'input : {self.vel[0][0]}')
+        # txt_scrn.append(f'forward : {self.spdf}')
+        # txt_scrn.append(f'tilt : {self.tilt[0][0]}')
+        # # txt_scrn.append(f'input : {self.vel[1][0]}')
+        # # txt_scrn.append(f'right   : {self.spdr}')
+        # txt_scrn.append(f'speed   : {control.keyboard_spd}')
+        # if DRONE_IP == "10.202.0.1": # 시뮬레이션
+        #     txt_scrn.append(f'P:{self.kf_sim_tilt[0]} I:{self.kf_sim_tilt[2]} D:{self.kf_sim_tilt[1]}')
+        # else :
+        #     txt_scrn.append(f'P:{self.kf_real_tilt[0]} I:{self.kf_real_tilt[2]} D:{self.kf_real_tilt[1]}')
+        # txt_scrn.append(f'{self.i_error_vel}')
 
         # print(control.keyboard_spd)
 
@@ -490,7 +547,7 @@ class StreamingExample(threading.Thread):
 
         drone_poi = self.drone.get_state(olympe.messages.ardrone3.PilotingState.AltitudeAboveGroundChanged)
         self.alt = drone_poi['altitude']
-        txt_scrn.append(f'alt : {self.alt}')
+        # txt_scrn.append(f'alt : {self.alt}')
 
         for i in range(len(txt_scrn)):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
@@ -525,6 +582,10 @@ class StreamingExample(threading.Thread):
             self.d_error_vel = (self.error_vel - self.error_vel_prev) / dt
             self.error_vel_prev = self.error_vel
             self.i_error_vel += self.error_vel * dt
+            if self.vel[0][0] != self.vel_prev[0][0]: # 이거는 forward에 대해만 짠거라서 추가 해야 됨
+                self.i_error_vel[0] = [0.0]
+                self.reset = 1
+            self.vel_prev = self.vel
 
             # pitch
             self.tilt[0] = strm.error_vel[0] * kf_tilt[0] + strm.d_error_vel[0] * kf_tilt[1] + strm.i_error_vel[0] * kf_tilt[2]
@@ -534,6 +595,11 @@ class StreamingExample(threading.Thread):
             self.tilt[2] = strm.error_vel[2] * kt_tilt[0] + strm.d_error_vel[2] * kt_tilt[1] + strm.i_error_vel[2] * kt_tilt[2]
             # yaw
             self.tilt[3] = strm.error_vel[3] * kc_tilt[0] + strm.d_error_vel[3] * kc_tilt[1] + strm.i_error_vel[3] * kc_tilt[2]
+
+            if self.tilt[0][0] > 100 : # 상황 봐서 수정하기
+                self.tilt[0][0] = 100
+            elif self.tilt[0][0] < -100 :
+                self.tilt[0][0] = -100
 
             self.drone(
                     PCMD(
@@ -610,7 +676,6 @@ class StreamingExample(threading.Thread):
             time.sleep(0.05) # 이건 왜 있는거지?
 
             if control.gim_up():
-                time.sleep(0.3) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
                 print(1,self.gimbal_angle)
                 self.gimbal_angle += 5
                 if self.gimbal_angle > 90:
@@ -628,9 +693,9 @@ class StreamingExample(threading.Thread):
                     roll = 0.0,
                 # )).wait().success()
                 ))
+                time.sleep(0.1) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
 
             elif control.gim_down():
-                time.sleep(0.3)
                 print(1,self.gimbal_angle)
                 self.gimbal_angle -= 5
                 if self.gimbal_angle < -90:
@@ -647,23 +712,54 @@ class StreamingExample(threading.Thread):
                     roll_frame_of_reference="none",     # None instead of absolute
                     roll = 0.0,
                 ))
+                time.sleep(0.1)
             
             if control.spd_up():
                 print('spd_up')
-                time.sleep(0.1)
                 control.keyboard_spd += 0.5
                 print(control.keyboard_spd)
                 # time.sleep(0.05)
                 if control.keyboard_spd > 10:
                     control.keyboard_spd = 10
+                time.sleep(0.1)
 
             if control.spd_down():
                 print('spd_down')
-                time.sleep(0.1)
                 control.keyboard_spd -= 0.5
                 # time.sleep(0.05)
                 if control.keyboard_spd < 0.5:
                     control.keyboard_spd = 0.5
+                time.sleep(0.1)
+
+            if control.p_up():
+                print('p_up')
+                self.kf_sim_tilt[0] += 0.5
+                time.sleep(0.1)
+            
+            if control.p_down():
+                print('p_down')
+                self.kf_sim_tilt[0] -= 0.5
+                time.sleep(0.1)
+
+            if control.i_up():
+                print('i_up')
+                self.kf_sim_tilt[2] += 0.5
+                time.sleep(0.1)
+
+            if control.i_down():
+                print('i_down')
+                self.kf_sim_tilt[2] -= 0.5
+                time.sleep(0.1)
+
+            if control.d_up():
+                print('d_up')
+                self.kf_sim_tilt[1] += 0.5
+                time.sleep(0.1)
+
+            if control.d_down():
+                print('d_down')
+                self.kf_sim_tilt[1] -= 0.5
+                time.sleep(0.1)
 
 if __name__ == "__main__":
     strm = StreamingExample()
@@ -799,19 +895,19 @@ if __name__ == "__main__":
 # #     # # Apriltag가 보이지 않고, 키보드 입력 아닐때
 
     # 시뮬레이션 용
-    kf_sim = np.array([2.5,0,0]) # forward PDI
-    kr_sim = np.array([2.5,0,0]) # right PDI # 50,0,0 
-    kc_sim = np.array([1,0,0]) # clockwise PDI
+    kf_sim = np.array([0.3,0.0,0.0]) # forward PDI
+    kr_sim = np.array([0.5,0.0,0.0]) # right PDI # 50,0,0 
+    kc_sim = np.array([0.5,0.0,0.0]) # clockwise PDI
 
-    strm.kf_sim_tilt = np.array([10,0,10]) # forward PDI
-    strm.kr_sim_tilt = np.array([1,0,0]) # right PDI
-    strm.kt_sim_tilt = np.array([1,0,0]) # right PDI
-    strm.kc_sim_tilt = np.array([1,0,0]) # right PDI
+    strm.kf_sim_tilt = np.array([98.0,25.0,6.0]) # forward PDI #[23.0,21.0,0.5]
+    strm.kr_sim_tilt = np.array([1.0,0.0,0.0]) # right PDI
+    strm.kt_sim_tilt = np.array([1.0,0.0,0.0]) # right PDI
+    strm.kc_sim_tilt = np.array([1.0,0.0,0.0]) # right PDI
 
     # 실제 드론 용
-    kf_real = np.array([2.5,0,0])
-    kr_real = np.array([2.5,0,0])
-    kc_real = np.array([1,0,0])
+    kf_real = np.array([0.1,0.0,0.0])
+    kr_real = np.array([0.1,0.0,0.0])
+    kc_real = np.array([0.1,0.0,0.0])
 
     strm.kf_real_tilt = np.array([1,0,0]) # forward PDI
     strm.kr_real_tilt = np.array([1,0,0]) # right PDI
@@ -905,7 +1001,7 @@ if __name__ == "__main__":
 
                 # Landing
                 # if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
-                if abs(strm.drn[1]) < 0.15: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
+                if abs(strm.drn[1]) < 0.2: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기 # 0.15
                     drone(Landing())
                     print('landing') # 이게 오래 걸리므로 몇초 뒤에 종료하거나 고도 이용해서 종료하기
 
@@ -940,8 +1036,31 @@ if __name__ == "__main__":
     ############# *중요* 비상 조종용
 
     print('keyborad control start')
+    print('Press tab to takeoff')
+    print('l to land')
+    print('r,f for gimbal')
+    print('t,g for speed')
+    print('y,h for p')
+    print('u,j for i')
+    print('i,k for d')
     print('Press esc to end')
-    strm.kbrd()
+    kbrd_parallel = threading.Thread(target = strm.kbrd)
+    kbrd_parallel.start()
+
+    while 1: # 속도 plot 하기
+        plt.close
+        if strm.reset == 1 :
+            strm.spd_f_graph = np.array([0.0])
+            strm.graph_time = np.array([time.time()])
+            strm.reset = 0
+            plt.cla()
+        strm.spd_f_graph = np.append(strm.spd_f_graph,strm.spdf)
+        strm.graph_time = np.append(strm.graph_time,time.time())
+        # plt.plot(strm.spd_f_graph)
+        plt.scatter(strm.graph_time, strm.spd_f_graph, s = 100, c = 'g')
+        plt.ylabel('speed_f')
+        plt.show(block = False)
+        plt.pause(0.0001)
 
 '''
 Log :
