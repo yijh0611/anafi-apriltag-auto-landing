@@ -3,20 +3,21 @@
 # NOTE: Line numbers of this example are referenced in the user guide.
 # Don't forget to update the user guide after every modification of this example.
 
+
+# AnafiSensors.update - 뭔지 알아보기
+
 import csv
 import cv2
 import math
 import os
-import queue # 병렬 연산하는데 필요하다고 함
+import queue # 데이터 선입 선출용
 import shlex
 import subprocess
 import tempfile
 import threading
 import traceback
 import time
-# import apriltag
 import socket
-# from pupil_apriltags import Detector
 import pupil_apriltags
 import numpy as np
 import matplotlib.pyplot as plt
@@ -271,7 +272,7 @@ class StreamingExample(threading.Thread):
     
     can_i_move = 0
     can_i_move_original = 0
-    start_log = 1 # 1 when logging, 0 when not logging
+    start_log = 0 # 1 when logging, 0 when not logging
 
     ##### 속도 제어를 위한 변수들
     vel = [[0],[0],[0],[0]] # forward, right, up, clockwise
@@ -347,6 +348,7 @@ class StreamingExample(threading.Thread):
         self.time_log_prev = time.time()
         self.location = np.array([0,0,0,0,0])
         print(f'start log {name}')
+
         while 1:
             # 그냥 하면 1초만에 메모리를 다 써버려서 딜레이를 넣어야 함.
             if time.time() > self.time_delay + 1/50 : # 초당 50번 기록 - 기록개수 제한 있는 듯(얼마인지는 잘 모르겠다.). 더 필요할거 같으면 나중에 로그파일 더 늘릴 수 있게 코드 수정하기
@@ -437,21 +439,21 @@ class StreamingExample(threading.Thread):
             olympe.PDRAW_YUV_FORMAT_NV12: cv2.COLOR_YUV2BGR_NV12,
         }[1]
         
-        ###########################
-        frame_np = yuv_frame.as_ndarray()
-        # print(np.shape(frame_np))
+        # ###########################
+        # frame_np = yuv_frame.as_ndarray()
+        # # print(np.shape(frame_np))
 
-        cb = frame_np[720:1080,0:1280]
-        # cb = frame_np[0:720,0:1280]
-        # cr = frame_np[:640,900:1080]
+        # cb = frame_np[720:1080,0:1280]
+        # # cb = frame_np[0:720,0:1280]
+        # # cr = frame_np[:640,900:1080]
 
-        # cb = frame_np[:-1][720:1080]
-        # cb = frame_np
-        # print(np.shape(cb))
+        # # cb = frame_np[:-1][720:1080]
+        # # cb = frame_np
+        # # print(np.shape(cb))
 
-        cv2.imshow('cb', cb)
-        # cv2.imshow('cr', cr)
-        ###########################
+        # cv2.imshow('cb', cb)
+        # # cv2.imshow('cr', cr)
+        # ###########################
 
         # yuv to Grayscale
         self.cv2frame = yuv_frame.as_ndarray()[:-1][:720]
@@ -506,7 +508,8 @@ class StreamingExample(threading.Thread):
                 self.can_i_move += 1
             self.b = time.time() - a
             ######## 여기까지 Tag가 보일때 ########
-        else : # 태그가 안보일때
+        # 태그가 안보일때
+        else :
             tag = 0 # imshow 때문.
             if control.end_control == 0:
                 self.vel = np.array([[0.],[0.],[0.],[0.]]) # 속도 컨트롤러 끄기 위함 - 이거는 수정해야 할 수도 있음
@@ -529,7 +532,12 @@ class StreamingExample(threading.Thread):
         # txt_scrn.append('time : {:.4f}'.format(self.dt))
         # txt_scrn.append('time : {:.4f}'.format(self.b))
         # txt_scrn.append('')
+        
+        #############################
+        # a = self.drone.getInstrument(Instruments.speedometer)
 
+        # txt_scrn.append(f'speed : {a}')
+        #############################
         drone_speed = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)
         self.speedx = drone_speed['speedX']
         self.speedy = self.drone.get_state(olympe.messages.ardrone3.PilotingState.SpeedChanged)['speedY']
@@ -537,7 +545,6 @@ class StreamingExample(threading.Thread):
 
         self.spdf = self.speedx * math.cos(hdg) + self.speedy * math.sin(hdg)
         self.spdr = self.speedx * math.sin(hdg) * (-1) + self.speedy * math.cos(hdg)
-        
         # ##### 스피드 플롯하기
         # if self.error_vel[0] != self.error_vel_prev[0]:
         #     self.spd_f_graph = np.array([0.0])
@@ -551,7 +558,6 @@ class StreamingExample(threading.Thread):
         # plt.show(block = False)
         # plt.pause(0.01)
         # ##### 스피드 플롯 종료
-        
         
         txt_scrn.append('')
         txt_scrn.append(f'input : {self.vel[0][0]}')
@@ -590,7 +596,6 @@ class StreamingExample(threading.Thread):
         # txt_scrn.append(f'lat1 : {self.lat1}')
         txt_scrn.append(f'lat2 : {self.lat2}')
         txt_scrn.append(f'lat3 : {self.lat3}')
-
 
         for i in range(len(txt_scrn)):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
@@ -681,7 +686,7 @@ class StreamingExample(threading.Thread):
 
     def kbrd(self):
         # control = KeyboardCtrl()
-        control.keyboard_spd = 70
+        # control.keyboard_spd = 70
         while not control.quit():
             if control.takeoff():
                 self.drone(TakeOff())
@@ -691,119 +696,119 @@ class StreamingExample(threading.Thread):
                 print("Drone has Landed")
                 print("Press ESC to end")
 
-            # 원래 제어 코드
-            if control.has_piloting_cmd():
-                self.drone(
-                        PCMD(
-                        1,
-                        control.roll(),
-                        control.pitch(),
-                        control.yaw(),
-                        control.throttle(),
-                        timestampAndSeqNum=0,
-                    )
-                )
+            # # # 원래 제어 코드
+            # if control.has_piloting_cmd():
+            #     self.drone(
+            #             PCMD(
+            #             1,
+            #             control.roll(),
+            #             control.pitch(),
+            #             control.yaw(),
+            #             control.throttle(),
+            #             timestampAndSeqNum=0,
+            #         )
+            #     )
 
-            else:
-                self.drone(PCMD(0, 0, 0, 0, 0, timestampAndSeqNum=0))
+            # else:
+            #     self.drone(PCMD(0, 0, 0, 0, 0, timestampAndSeqNum=0))
 
             # # 속도 제어기를 이용한 제어
-            # if control.has_piloting_cmd(): # 속도 입력이 있을 때
-            #     strm.vel[0][0] = control.pitch()
-            #     strm.vel[1][0] = control.roll()
-            #     strm.vel[2][0] = control.throttle()
-            #     strm.vel[3][0] = control.yaw()
+            if control.has_piloting_cmd(): # 속도 입력이 있을 때
+                strm.vel[0][0] = control.pitch()
+                strm.vel[1][0] = control.roll()
+                strm.vel[2][0] = control.throttle()
+                strm.vel[3][0] = control.yaw()
 
-            # else: # 속도 입력이 없을 때
-            #     strm.vel = np.array([[0],[0],[0],[0]])
+            else: # 속도 입력이 없을 때
+                strm.vel = np.array([[0],[0],[0],[0]])
 
-            # time.sleep(0.05) # 이건 왜 있는거지?
+            time.sleep(0.05) # 이건 왜 있는거지?
 
-            # if control.gim_up():
-            #     print(1,self.gimbal_angle)
-            #     self.gimbal_angle += 5
-            #     if self.gimbal_angle > 90:
-            #         self.gimbal_angle = -90
-            #     print(2,self.gimbal_angle)
+            if control.gim_up():
+                print(1,self.gimbal_angle)
+                self.gimbal_angle += 5
+                if self.gimbal_angle > 90:
+                    self.gimbal_angle = -90
+                print(2,self.gimbal_angle)
 
-            #     self.drone(set_target(
-            #         gimbal_id = 0,
-            #         control_mode="position",
-            #         yaw_frame_of_reference="none",   # None instead of absolute
-            #         yaw = 0.0,
-            #         pitch_frame_of_reference="absolute",
-            #         pitch = self.gimbal_angle, # 45.0
-            #         roll_frame_of_reference="none",     # None instead of absolute
-            #         roll = 0.0,
-            #     # )).wait().success()
-            #     ))
-            #     time.sleep(0.1) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
+                self.drone(set_target(
+                    gimbal_id = 0,
+                    control_mode="position",
+                    yaw_frame_of_reference="none",   # None instead of absolute
+                    yaw = 0.0,
+                    pitch_frame_of_reference="absolute",
+                    pitch = self.gimbal_angle, # 45.0
+                    roll_frame_of_reference="none",     # None instead of absolute
+                    roll = 0.0,
+                # )).wait().success()
+                ))
+                time.sleep(0.1) # 0.3초 딜레이가 없으면 너무 많이 이동한다.
 
-            # elif control.gim_down():
-            #     print(1,self.gimbal_angle)
-            #     self.gimbal_angle -= 5
-            #     if self.gimbal_angle < -90:
-            #         self.gimbal_angle = 90
-            #     print(2,self.gimbal_angle)
+            elif control.gim_down():
+                print(1,self.gimbal_angle)
+                self.gimbal_angle -= 5
+                if self.gimbal_angle < -90:
+                    self.gimbal_angle = 90
+                print(2,self.gimbal_angle)
 
-            #     self.drone(set_target(
-            #         gimbal_id = 0,
-            #         control_mode="position",
-            #         yaw_frame_of_reference="none",   # None instead of absolute
-            #         yaw = 0.0,
-            #         pitch_frame_of_reference="absolute",
-            #         pitch = self.gimbal_angle, # 45.0
-            #         roll_frame_of_reference="none",     # None instead of absolute
-            #         roll = 0.0,
-            #     ))
-            #     time.sleep(0.1)
+                self.drone(set_target(
+                    gimbal_id = 0,
+                    control_mode="position",
+                    yaw_frame_of_reference="none",   # None instead of absolute
+                    yaw = 0.0,
+                    pitch_frame_of_reference="absolute",
+                    pitch = self.gimbal_angle, # 45.0
+                    roll_frame_of_reference="none",     # None instead of absolute
+                    roll = 0.0,
+                ))
+                time.sleep(0.1)
             
-            # if control.spd_up():
-            #     print('spd_up')
-            #     control.keyboard_spd += 0.5
-            #     print(control.keyboard_spd)
-            #     # time.sleep(0.05)
-            #     if control.keyboard_spd > 10:
-            #         control.keyboard_spd = 10
-            #     time.sleep(0.1)
+            if control.spd_up():
+                print('spd_up')
+                control.keyboard_spd += 0.5
+                print(control.keyboard_spd)
+                # time.sleep(0.05)
+                if control.keyboard_spd > 10:
+                    control.keyboard_spd = 10
+                time.sleep(0.1)
 
-            # if control.spd_down():
-            #     print('spd_down')
-            #     control.keyboard_spd -= 0.5
-            #     # time.sleep(0.05)
-            #     if control.keyboard_spd < 0.5:
-            #         control.keyboard_spd = 0.5
-            #     time.sleep(0.1)
+            if control.spd_down():
+                print('spd_down')
+                control.keyboard_spd -= 0.5
+                # time.sleep(0.05)
+                if control.keyboard_spd < 0.5:
+                    control.keyboard_spd = 0.5
+                time.sleep(0.1)
 
-            # if control.p_up():
-            #     print('p_up')
-            #     self.kf_sim_tilt[0] += 0.5
-            #     time.sleep(0.1)
+            if control.p_up():
+                print('p_up')
+                self.kf_sim_tilt[0] += 0.5
+                time.sleep(0.1)
             
-            # if control.p_down():
-            #     print('p_down')
-            #     self.kf_sim_tilt[0] -= 0.5
-            #     time.sleep(0.1)
+            if control.p_down():
+                print('p_down')
+                self.kf_sim_tilt[0] -= 0.5
+                time.sleep(0.1)
 
-            # if control.i_up():
-            #     print('i_up')
-            #     self.kf_sim_tilt[2] += 0.5
-            #     time.sleep(0.1)
+            if control.i_up():
+                print('i_up')
+                self.kf_sim_tilt[2] += 0.5
+                time.sleep(0.1)
 
-            # if control.i_down():
-            #     print('i_down')
-            #     self.kf_sim_tilt[2] -= 0.5
-            #     time.sleep(0.1)
+            if control.i_down():
+                print('i_down')
+                self.kf_sim_tilt[2] -= 0.5
+                time.sleep(0.1)
 
-            # if control.d_up():
-            #     print('d_up')
-            #     self.kf_sim_tilt[1] += 0.5
-            #     time.sleep(0.1)
+            if control.d_up():
+                print('d_up')
+                self.kf_sim_tilt[1] += 0.5
+                time.sleep(0.1)
 
-            # if control.d_down():
-            #     print('d_down')
-            #     self.kf_sim_tilt[1] -= 0.5
-            #     time.sleep(0.1)
+            if control.d_down():
+                print('d_down')
+                self.kf_sim_tilt[1] -= 0.5
+                time.sleep(0.1)
 
 if __name__ == "__main__":
     strm = StreamingExample()
@@ -812,9 +817,7 @@ if __name__ == "__main__":
     drone = strm.drone
     strm.gimbal_angle = 0
 
-
     drone(GPSFixStateChanged(_policy = 'wait'))
-
 
     # start logging
     if strm.start_log > 0 :
@@ -828,8 +831,6 @@ if __name__ == "__main__":
     strm.can_i_move_original = 0 # 연산이 끝나고 이동을 하기 위한 변수
     # 드론 가지고 오기 - streaming 에서 이미 드론을 받아왔으므로 거기서 불러와야 한다.
     
-
-
     print(DRONE_IP)
     control = KeyboardCtrl()
 
@@ -855,14 +856,14 @@ if __name__ == "__main__":
     time.sleep(2)
 
     # # # 드론이 날고 있지 않을때 이륙
-    # if drone(FlyingStateChanged(state="hovering", _policy="check")): 
-    #     print('Hovering')
-    # else :
-    #     print('Takeoff')
+    if drone(FlyingStateChanged(state="hovering", _policy="check")): 
+        print('Hovering')
+    else :
+        print('Takeoff')
 
-    #     assert drone(
-    #             TakeOff()
-    #         ).wait().success()
+        assert drone(
+                TakeOff()
+            ).wait().success()
 
     # start logging
     if strm.start_log > 0 :
@@ -949,9 +950,7 @@ if __name__ == "__main__":
     # print('Test end')
 
 ################################################
-
 # #     # # Apriltag가 보이지 않고, 키보드 입력 아닐때
-
     # 시뮬레이션 용
     kf_sim = np.array([0.3,0.0,0.0]) # forward PDI
     kr_sim = np.array([0.5,0.0,0.0]) # right PDI # 50,0,0 
@@ -991,9 +990,7 @@ if __name__ == "__main__":
         kr_tilt = strm.kr_real_tilt
         kt_tilt = strm.kt_real_tilt
         kc_tilt = strm.kc_real_tilt
-
 ################################################
-
     while strm.center_x == -1 and control.end_control == 0:
 
         # 이륙 후 Apriltag 찾을때 - 더 좋은 방법이 있을 듯
@@ -1015,10 +1012,10 @@ if __name__ == "__main__":
     print('Tag found')
 
     # # 속도 컨트롤러 시작
-    # # print('starttttt')
-    # vel_controller = threading.Thread(target = StreamingExample.vel_controller ,args = (strm,))
-    # vel_controller.start()
-    # # print('startedddd')
+    # # print('start')
+    vel_controller = threading.Thread(target = StreamingExample.vel_controller ,args = (strm,))
+    vel_controller.start()
+    # # print('started')
 
     # 키보드 조종으로 전환하지 않았을때
     while control.end_control == 0:
@@ -1052,10 +1049,11 @@ if __name__ == "__main__":
 
                 # # Clocklwise
                 # if abs(strm.center_x - 640) > 150 : # 중심이 화면 중앙에 있지 않을 때
-                #     vel[3]
+                #     vel[3] = kc[0] * strm.drn[3] + kc[1] * strm.d_drn[3]/dt + kc[2] * strm.drn_i[3] * dt
+                    # print(f'Clockwise {strm.vel[3]}')
 
-                # Throttle
-                # if 
+                # Throttle - 안건드리는게 나을 듯
+                # if 고도가 낮을때?
 
                 # Landing
                 # if strm.gim_ang[0] > -15 and abs(strm.center_x - 640) < 50: # 착륙 - 나중에 수정하기 # 거리가 확실해지기 전까지는 최대한 각도 데이터 이용하기
@@ -1090,9 +1088,7 @@ if __name__ == "__main__":
                 # 5초 이상 태그를 못 찾으면 착륙
                 if time.time() - strm.time_tag > 10:
                     drone(Landing())
-
     ############# *중요* 비상 조종용
-
     print('keyborad control start')
     print('Press tab to takeoff')
     print('l to land')
