@@ -36,7 +36,8 @@ from olympe.messages.ardrone3.GPSSettingsState import GPSFixStateChanged
 from olympe.messages.gimbal import set_target
 from olympe.messages.move import extended_move_by
 
-olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}}) # 이거 수정하면 로그가 어떤게 출력되는지 바꿀 수 있음(CMD)
+# olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}}) # 이거 수정하면 로그가 어떤게 출력되는지 바꿀 수 있음(CMD)
+olympe.log.update_config({"loggers": {"olympe": {"level": "ERROR"}}}) # 이거 수정하면 로그가 어떤게 출력되는지 바꿀 수 있음(CMD)
 
 # 드론 와이파이 인지 아닌지 자동 판별
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -387,22 +388,22 @@ class StreamingExample(threading.Thread):
         # self.alt = drone_poi['altitude']
         # txt_scrn.append(f'alt : {self.alt}')
         
-        #GPS
-        # drone_gps1 = self.drone.get_state(olympe.messages.ardrone3.GPSSettings.SendControllerGPS)
-        drone_gps2 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.GpsLocationChanged)
-        drone_gps3 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
-        # drone_gps = self.drone.get_state()
-        # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
-        # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
-        # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
-        # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # #GPS
+        # # drone_gps1 = self.drone.get_state(olympe.messages.ardrone3.GPSSettings.SendControllerGPS)
+        # drone_gps2 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.GpsLocationChanged)
+        # drone_gps3 = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # # drone_gps = self.drone.get_state()
+        # # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
+        # # drone_gps = self.drone.get_state(olympe.messages.ardrone3.PilotingState.PositionChanged)
 
-        # self.lat1 = drone_gps1['latitude']
-        self.lat2 = drone_gps2['latitude']
-        self.lat3 = drone_gps3['latitude']
-        # txt_scrn.append(f'lat1 : {self.lat1}')
-        txt_scrn.append(f'lat2 : {self.lat2}')
-        txt_scrn.append(f'lat3 : {self.lat3}')
+        # # self.lat1 = drone_gps1['latitude']
+        # self.lat2 = drone_gps2['latitude']
+        # self.lat3 = drone_gps3['latitude']
+        # # txt_scrn.append(f'lat1 : {self.lat1}')
+        # txt_scrn.append(f'lat2 : {self.lat2}')
+        # txt_scrn.append(f'lat3 : {self.lat3}')
 
         for i in range(len(txt_scrn)):
             cv2.putText(self.cv2frame, "{}".format(txt_scrn[i]), (50, 50 * (i + 1)), # 50,50
