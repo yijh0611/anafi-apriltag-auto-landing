@@ -618,8 +618,23 @@ class StreamingExample(threading.Thread):
                 self.kf_sim_tilt[1] -= 0.5
                 time.sleep(0.1)
 
+class Variables():
+    def __init__(self):
+        self.abab = 1
+        pass
+
+class ChildStreaming(anafi_streaming.StreamingExample):
+    
+    def __init__(self):
+        pass
+    
+    def yuv(self):
+        pass
+
 if __name__ == "__main__":
+    var = Variables()
     strm = StreamingExample()
+    # strm = ChildStreaming()
     # Start the video stream
     strm.start()
     drone = strm.drone
